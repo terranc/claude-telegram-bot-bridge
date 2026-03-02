@@ -1,0 +1,37 @@
+# Environment variables (contains secrets)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Bot runtime data
+.telegram_bot/
+
+# IDE and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+.claude
+.git
+.skillshare/
+
+# Logs
+*.log
+logs/
+/.env
+.doc_hash
