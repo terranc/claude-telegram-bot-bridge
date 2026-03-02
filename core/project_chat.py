@@ -105,6 +105,7 @@ class ChatResponse:
     success: bool = True
     error: Optional[str] = None
     session_id: Optional[str] = None
+    has_options: bool = False
 
 
 @dataclass
@@ -129,6 +130,7 @@ class _UserStreamState:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     pending: Deque[_PendingRequest] = field(default_factory=deque)
     reader_task: Optional[asyncio.Task] = None
+    typing_task: Optional[asyncio.Task] = None
     last_session_id: Optional[str] = None
 
 
@@ -191,12 +193,23 @@ class ProjectChatHandler:
         state = _UserStreamState(client=client, model=model)
         state_holder["state"] = state
         state.reader_task = asyncio.create_task(self._reader_loop(user_id, state))
+        state.typing_task = asyncio.create_task(self._typing_keepalive_loop(user_id, state))
         return state
 
     async def _disconnect_user_stream(self, user_id: int, cancel_message: Optional[str] = None) -> bool:
         state = self._streams.pop(user_id, None)
         if not state:
             return False
+
+        # Cancel typing keepalive task
+        if state.typing_task and not state.typing_task.done():
+            state.typing_task.cancel()
+            try:
+                await asyncio.wait_for(state.typing_task, timeout=1.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            except Exception as e:
+                logger.error(f"Error cancelling typing task for user {user_id}: {e}")
 
         # Cancel reader task first
         if state.reader_task and not state.reader_task.done():
@@ -254,6 +267,33 @@ class ProjectChatHandler:
                 self._streams[user_id] = state
             return state
 
+    async def _typing_keepalive_loop(self, user_id: int, state: _UserStreamState) -> None:
+        """Background task that sends typing actions at regular intervals.
+
+        Keeps Telegram typing indicator alive during long tool calls when
+        the SDK stream emits no messages.
+        """
+        try:
+            while True:
+                await asyncio.sleep(TYPING_INTERVAL)
+                if not state.pending:
+                    continue
+                req = state.pending[0]
+                if not req.typing_callback:
+                    continue
+                now = asyncio.get_event_loop().time()
+                if now - req.last_typing_at < TYPING_INTERVAL:
+                    continue
+                req.last_typing_at = now
+                try:
+                    await req.typing_callback()
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Typing keepalive loop crashed for user {user_id}: {e}", exc_info=True)
+
     async def _reader_loop(self, user_id: int, state: _UserStreamState) -> None:
         try:
             async for msg in state.client.receive_messages():
@@ -304,7 +344,10 @@ class ProjectChatHandler:
                         )
                     else:
                         log_chat(req.user_id, msg.session_id or req.requested_session_id, "assistant", content, model=req.model)
-                        response = ChatResponse(content=content, success=True, session_id=msg.session_id)
+                        response = ChatResponse(
+                            content=content, success=True, session_id=msg.session_id,
+                            has_options=req.synthetic_response is not None,
+                        )
 
                     if not req.future.done():
                         try:
@@ -317,6 +360,9 @@ class ProjectChatHandler:
             raise
         except Exception as e:
             logger.error(f"Reader loop crashed for user {user_id}: {e}", exc_info=True)
+            # Cancel typing keepalive to prevent orphan task
+            if state.typing_task and not state.typing_task.done():
+                state.typing_task.cancel()
             # Remove broken stream so the next request creates a fresh connection
             self._streams.pop(user_id, None)
             # Safely handle pending requests
@@ -465,8 +511,6 @@ class ProjectChatHandler:
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         cleaned = ansi_escape.sub("", response)
         cleaned = "".join(char for char in cleaned if ord(char) >= 32 or char in "\n\r\t")
-        if len(cleaned) > 4000:
-            cleaned = cleaned[:4000] + "\n\n...(Content too long, truncated)"
         return cleaned.strip()
 
 

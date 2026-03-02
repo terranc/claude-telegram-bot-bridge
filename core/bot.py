@@ -652,7 +652,7 @@ class TelegramBot:
                 typing_callback=lambda: update.message.chat.send_action(action="typing"),
             )
             await self._save_session_id(user_id, response)
-            await self._reply_smart(update.message, response.content, parse_mode="Markdown")
+            await self._reply_smart(update.message, response.content, parse_mode="Markdown", force_options=response.has_options)
 
         async def on_overflow():
             reply = "⏳ Processing previous messages, please wait or send /stop to terminate."
@@ -681,7 +681,7 @@ class TelegramBot:
                     typing_callback=lambda: update.message.chat.send_action(action="typing"),
                 )
                 await self._save_session_id(user_id, response)
-                await self._reply_smart(update.message, response.content, parse_mode="Markdown")
+                await self._reply_smart(update.message, response.content, parse_mode="Markdown", force_options=response.has_options)
             except Exception as e:
                 logger.error(f"Skill execution failed: {e}", exc_info=True)
                 await update.message.reply_text(f"❌ Execution failed: {str(e)}")
@@ -808,7 +808,7 @@ class TelegramBot:
                     typing_callback=lambda: update.message.chat.send_action(action="typing"),
                 )
                 await self._save_session_id(user_id, response)
-                await self._reply_smart(update.message, response.content, parse_mode="Markdown")
+                await self._reply_smart(update.message, response.content, parse_mode="Markdown", force_options=response.has_options)
 
             except Exception as e:
                 logger.error(f"Error in project chat: {e}", exc_info=True)
@@ -909,37 +909,66 @@ class TelegramBot:
             reply_markup=kb,
         )
 
-    async def _reply_smart(self, message, content: str, parse_mode: str = "Markdown"):
-        """Reply with text, send referenced files, and add option buttons if detected."""
-        try:
-            await message.reply_text(content, parse_mode=parse_mode)
-        except Exception:
-            await message.reply_text(content)
+    @staticmethod
+    def _split_text(text: str, limit: int = 4000) -> List[str]:
+        """Split text into chunks no longer than limit, breaking at paragraph or line boundaries."""
+        if len(text) <= limit:
+            return [text]
+        chunks: List[str] = []
+        remaining = text
+        while len(remaining) > limit:
+            # Try to split at a paragraph boundary (double newline)
+            cut = remaining.rfind("\n\n", 0, limit)
+            if cut == -1:
+                # Fall back to single newline
+                cut = remaining.rfind("\n", 0, limit)
+            if cut == -1:
+                # Hard cut at limit
+                cut = limit
+            else:
+                cut += 1  # include the newline in the current chunk
+            chunks.append(remaining[:cut].rstrip())
+            remaining = remaining[cut:].lstrip("\n")
+        if remaining:
+            chunks.append(remaining)
+        return chunks
+
+    async def _reply_smart(self, message, content: str, parse_mode: str = "Markdown", force_options: bool = False):
+        """Reply with text (splitting if needed), send referenced files, and add option buttons."""
+        for part in self._split_text(content):
+            try:
+                await message.reply_text(part, parse_mode=parse_mode)
+            except Exception:
+                await message.reply_text(part)
         # Send files mentioned in the response
         resolved_paths = self._resolve_paths(content)
         in_root_paths, _ = self._split_paths_by_scope(resolved_paths)
         await self._send_file_paths(message.chat.id, in_root_paths)
 
-        # Detect numbered options and send inline keyboard
-        options = self._extract_options(content)
-        kb = self._build_option_keyboard(options)
-        if kb:
-            await message.reply_text("Please select:", reply_markup=kb)
+        # Only show inline keyboard for AskUserQuestion degraded content
+        if force_options:
+            options = self._extract_options(content)
+            kb = self._build_option_keyboard(options)
+            if kb:
+                await message.reply_text("Please select:", reply_markup=kb)
 
-    async def _send_smart(self, chat_id: int, content: str, user_id: Optional[int] = None):
-        """Send text to chat_id with file and option detection."""
+    async def _send_smart(self, chat_id: int, content: str, user_id: Optional[int] = None, force_options: bool = False):
+        """Send text to chat_id (splitting if needed) with file and option detection."""
         bot = self.application.bot
-        try:
-            await bot.send_message(chat_id, content, parse_mode="Markdown")
-        except Exception:
-            await bot.send_message(chat_id, content)
+        for part in self._split_text(content):
+            try:
+                await bot.send_message(chat_id, part, parse_mode="Markdown")
+            except Exception:
+                await bot.send_message(chat_id, part)
         resolved_paths = self._resolve_paths(content)
         in_root_paths, _ = self._split_paths_by_scope(resolved_paths)
         await self._send_file_paths(chat_id, in_root_paths)
-        options = self._extract_options(content)
-        kb = self._build_option_keyboard(options)
-        if kb:
-            await bot.send_message(chat_id, "Please select:", reply_markup=kb)
+        # Only show inline keyboard for AskUserQuestion degraded content
+        if force_options:
+            options = self._extract_options(content)
+            kb = self._build_option_keyboard(options)
+            if kb:
+                await bot.send_message(chat_id, "Please select:", reply_markup=kb)
 
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from inline keyboards"""
@@ -1001,7 +1030,7 @@ class TelegramBot:
                         typing_callback=lambda: self.application.bot.send_chat_action(chat_id, action="typing"),
                     )
                     await self._save_session_id(user_id, response)
-                    await self._send_smart(chat_id, response.content, user_id=user_id)
+                    await self._send_smart(chat_id, response.content, user_id=user_id, force_options=response.has_options)
                 except Exception as e:
                     logger.error(f"Option reply failed: {e}", exc_info=True)
                     await self.application.bot.send_message(chat_id, f"❌ Processing failed: {e}")
