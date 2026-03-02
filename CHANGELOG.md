@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-03
+
+### Added
+- Progressive streaming for AI responses using Telegram draft messages with real-time updates
+- Telegram draft API compatibility layer with graceful fallback to regular messages
+- Automatic detection of numbered options in responses (not just `AskUserQuestion` tool)
+- Streaming configuration via `DRAFT_UPDATE_MIN_CHARS` and `DRAFT_UPDATE_INTERVAL` environment variables
+
+### Fixed
+- Duplicate message issue when responses contain option buttons: streamed messages are no longer re-sent
+- Improved `AskUserQuestion` denial message with clearer formatting instructions for the AI
+
+### Changed
+- Streaming message handler now uses regular `send_message` for initial draft creation to ensure message_id availability
+- Large text chunks are split into progressive updates for smoother streaming experience
+
 ## [0.2.1] - 2026-03-02
 
 ### Added
