@@ -21,6 +21,7 @@ This bot takes a different approach — **lightweight, zero-infrastructure, secu
 - Resume previous conversations with `/resume` and browse session history
 
 **Smart Interaction**
+- Progressive streaming: AI responses update in real-time as Claude thinks, not after completion
 - Claude's numbered options auto-convert to Telegram inline keyboard buttons — just tap to choose
 - File paths (images, PDFs, etc.) in Claude's responses are automatically sent as photos or documents
 - Per-user dedicated SDK streams — low latency, concurrent message support (up to 3 per user)
@@ -149,9 +150,9 @@ tgbot ~/my-project --uninstall
 | Command | Description |
 |---|---|
 | `/start` | Start a conversation |
-| `/new` | Start a new session (clears current stream) |
+| `/new` | Start a new session (clears current stream and cancels ongoing streaming) |
 | `/model` | Switch model (Sonnet / Opus / Haiku) |
-| `/resume` | Browse and resume a previous session |
+| `/resume` | Browse and resume a previous session (shows progress summary with last assistant message) |
 | `/stop` | Terminate the current running task |
 | `/skills` | List available Claude Code skills |
 | `/skill <name> [args]` | Execute a skill command |
@@ -168,6 +169,8 @@ Any unrecognized `/command` is also forwarded as a skill invocation.
 | `CLAUDE_CLI_PATH` | No | *(auto-detect)* | Absolute path to Claude CLI binary |
 | `CLAUDE_SETTINGS_PATH` | No | `~/.claude/settings.json` | Path to Claude Code settings file |
 | `CLAUDE_PROCESS_TIMEOUT` | No | `600` | SDK timeout in seconds |
+| `DRAFT_UPDATE_MIN_CHARS` | No | `150` | Minimum characters before streaming draft update |
+| `DRAFT_UPDATE_INTERVAL` | No | `1.0` | Minimum seconds between streaming draft updates |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 | `PROXY_URL` | No | — | HTTP proxy; auto-configures `http_proxy`/`https_proxy`/`all_proxy` |
 

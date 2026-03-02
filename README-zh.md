@@ -21,6 +21,7 @@ Claude Code 很强大，但它绑定在你的终端里。当你离开电脑 — 
 - 使用 `/resume` 恢复历史对话，浏览会话记录
 
 **智能交互**
+- 渐进式流式响应：AI 回复实时更新，边思考边显示，而非等待完成后才展示
 - Claude 输出的编号选项自动转为 Telegram 内联按钮 — 点击即选
 - 响应中的文件路径（图片、PDF 等）自动作为照片或文档发送
 - 每用户独立的 SDK 长连接 — 低延迟，支持并发消息（每用户最多 3 条）
@@ -149,9 +150,9 @@ tgbot ~/my-project --uninstall
 | 命令 | 说明 |
 |---|---|
 | `/start` | 开始对话 |
-| `/new` | 开启新会话（清除当前连接） |
+| `/new` | 开启新会话（清除当前连接并取消正在进行的流式响应） |
 | `/model` | 切换模型（Sonnet / Opus / Haiku） |
-| `/resume` | 浏览并恢复历史会话 |
+| `/resume` | 浏览并恢复历史会话（显示进度摘要及最后一条助手消息） |
 | `/stop` | 终止当前运行的任务 |
 | `/skills` | 列出可用的 Claude Code 技能 |
 | `/skill <name> [args]` | 执行技能命令 |
@@ -168,6 +169,8 @@ tgbot ~/my-project --uninstall
 | `CLAUDE_CLI_PATH` | 否 | *（自动检测）* | Claude CLI 绝对路径 |
 | `CLAUDE_SETTINGS_PATH` | 否 | `~/.claude/settings.json` | Claude Code settings 文件路径 |
 | `CLAUDE_PROCESS_TIMEOUT` | 否 | `600` | SDK 超时时间（秒） |
+| `DRAFT_UPDATE_MIN_CHARS` | 否 | `150` | 流式响应草稿更新的最小字符数 |
+| `DRAFT_UPDATE_INTERVAL` | 否 | `1.0` | 流式响应草稿更新的最小间隔（秒） |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别 |
 | `PROXY_URL` | 否 | — | HTTP 代理；自动配置 `http_proxy`/`https_proxy`/`all_proxy` |
 
