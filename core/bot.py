@@ -403,6 +403,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("history", self._cmd_history))
         self.application.add_handler(CommandHandler("revert", self._cmd_revert))
         self.application.add_handler(CommandHandler("command", self._cmd_command))
+        self.application.add_handler(CommandHandler("cd", self._cmd_cd))
         self.application.add_handler(CommandHandler("skill", self._cmd_skill))
 
         # Skill command handler - catches all /commands
@@ -1121,6 +1122,57 @@ class TelegramBot:
             await on_overflow()
             return False
         return True
+
+    async def _cmd_cd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._check_access(update):
+            return
+
+        from telegram_bot.core.project_chat import PROJECT_ROOT
+
+        user_id = update.effective_user.id
+        args = context.args
+
+        # No args: show current directory
+        if not args:
+            current = project_chat_handler.get_user_cwd(user_id)
+            await update.message.reply_text(
+                f"📂 Current directory: `{current}`\n\nUsage: `/cd <path>` or `/cd ~` to reset",
+                parse_mode="Markdown",
+            )
+            return
+
+        path_str = " ".join(args)
+
+        # ~ resets to original PROJECT_ROOT
+        if path_str.strip() == "~":
+            project_chat_handler.change_directory(user_id, PROJECT_ROOT)
+            await update.message.reply_text(
+                f"📂 Reset to project root:\n`{PROJECT_ROOT}`", parse_mode="Markdown"
+            )
+            return
+
+        # Resolve: absolute or relative to current cwd
+        current = project_chat_handler.get_user_cwd(user_id)
+        raw = FilePath(path_str).expanduser()
+        new_path = (raw if raw.is_absolute() else current / raw).resolve()
+
+        if not new_path.exists():
+            await update.message.reply_text(
+                f"❌ Path not found: `{new_path}`", parse_mode="Markdown"
+            )
+            return
+        if not new_path.is_dir():
+            await update.message.reply_text(
+                f"❌ Not a directory: `{new_path}`", parse_mode="Markdown"
+            )
+            return
+
+        project_chat_handler.change_directory(user_id, new_path)
+
+        reply = f"📂 Working directory changed to:\n`{new_path}`"
+        if not new_path.is_relative_to(PROJECT_ROOT):
+            reply += f"\n\n⚠️ Outside original project root (`{PROJECT_ROOT}`)\nPaths here will require confirmation."
+        await update.message.reply_text(reply, parse_mode="Markdown")
 
     async def _cmd_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /command xxx - forward as Claude Code slash command"""
@@ -2023,6 +2075,7 @@ class TelegramBot:
             BotCommand("skills", "List skills"),
             BotCommand("skill", "Run skill"),
             BotCommand("command", "Run command"),
+            BotCommand("cd", "Change working directory"),
         ]
         for scope in (
             BotCommandScopeAllPrivateChats(),

@@ -164,7 +164,16 @@ class ProjectChatHandler:
         self._active_tasks: Dict[int, asyncio.Task] = {}
         self._streams: Dict[int, _UserStreamState] = {}
         self._stream_init_locks: Dict[int, asyncio.Lock] = {}
+        self._user_cwds: Dict[int, Path] = {}
         logger.info(f"ProjectChatHandler initialized for {self.project_root}")
+
+    def get_user_cwd(self, user_id: int) -> Path:
+        return self._user_cwds.get(user_id, self.project_root)
+
+    def change_directory(self, user_id: int, new_path: Path) -> None:
+        self._user_cwds[user_id] = new_path
+        self.clear_user_stream(user_id)
+        logger.info(f"Changed cwd for user {user_id} to {new_path}")
 
     def _get_stream_init_lock(self, user_id: int) -> asyncio.Lock:
         lock = self._stream_init_locks.get(user_id)
@@ -214,7 +223,7 @@ class ProjectChatHandler:
             return PermissionResultAllow() if result else PermissionResultDeny()
 
         opts: Dict[str, Any] = {
-            "cwd": str(self.project_root),
+            "cwd": str(self.get_user_cwd(user_id)),
             "allowed_tools": ALLOWED_TOOLS,
             "disallowed_tools": ["AskUserQuestion"],  # Disable to force degradation
             "append_system_prompt": (
