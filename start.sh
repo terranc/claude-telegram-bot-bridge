@@ -582,6 +582,13 @@ rapid_crash_count=0
 
 cd "$REPO_ROOT"
 
+# Ensure the package is importable as "telegram_bot"; create a symlink if the
+# repo was cloned under a different directory name (e.g. claude-telegram-bot-bridge)
+if [ "$(basename "$SCRIPT_DIR")" != "telegram_bot" ] && [ ! -e "$REPO_ROOT/telegram_bot" ]; then
+    ln -s "$SCRIPT_DIR" "$REPO_ROOT/telegram_bot"
+    echo "🔗 Created telegram_bot -> $(basename "$SCRIPT_DIR") symlink"
+fi
+
 while true; do
     echo ""
     echo "🚀 Starting Telegram Bot..."
