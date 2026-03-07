@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DraftState:
     """State for a single draft message"""
+
     message_id: int
     text: str
     last_update_time: float
@@ -69,7 +70,9 @@ class StreamingMessageHandler:
             )
             message_id = self._extract_message_id(sent_message)
             if message_id is None:
-                raise RuntimeError("send_message did not return a message with valid message_id")
+                raise RuntimeError(
+                    "send_message did not return a message with valid message_id"
+                )
 
             draft = DraftState(
                 message_id=message_id,
@@ -79,7 +82,9 @@ class StreamingMessageHandler:
                 draft_id=None,
             )
             self.drafts.append(draft)
-            logger.debug(f"Created draft message {draft.message_id} for user {self.user_id}")
+            logger.debug(
+                f"Created draft message {draft.message_id} for user {self.user_id}"
+            )
             return draft
         except TelegramError as e:
             logger.error(f"Failed to create draft message: {e}")
@@ -92,9 +97,7 @@ class StreamingMessageHandler:
         """Update existing draft with new text"""
         try:
             await self.bot.edit_message_text(
-                chat_id=self.chat_id,
-                message_id=draft.message_id,
-                text=new_text
+                chat_id=self.chat_id, message_id=draft.message_id, text=new_text
             )
             draft.text = new_text
             draft.last_update_time = time.time()
@@ -106,7 +109,9 @@ class StreamingMessageHandler:
                 draft.text = new_text
                 draft.last_update_time = time.time()
                 draft.char_count_since_update = 0
-                logger.debug(f"Draft {draft.message_id} unchanged on update, treated as success")
+                logger.debug(
+                    f"Draft {draft.message_id} unchanged on update, treated as success"
+                )
                 return True
             logger.error(f"Failed to update draft {draft.message_id}: {e}")
             return False
@@ -114,15 +119,13 @@ class StreamingMessageHandler:
     def should_update(self, draft: DraftState, new_char_count: int) -> bool:
         """Check if draft should be updated based on thresholds"""
         time_elapsed = time.time() - draft.last_update_time
-        return (new_char_count >= self.min_chars or time_elapsed >= self.min_interval)
+        return new_char_count >= self.min_chars or time_elapsed >= self.min_interval
 
     async def finalize_draft(self, draft: DraftState) -> bool:
         """Convert draft to regular message"""
         try:
             await self.bot.edit_message_text(
-                chat_id=self.chat_id,
-                message_id=draft.message_id,
-                text=draft.text
+                chat_id=self.chat_id, message_id=draft.message_id, text=draft.text
             )
             logger.debug(f"Finalized draft {draft.message_id}")
             return True
@@ -171,7 +174,9 @@ class StreamingMessageHandler:
 
         if remaining_text:
             await self.create_draft(remaining_text)
-            logger.debug(f"Created overflow draft, remaining {len(remaining_text)} chars")
+            logger.debug(
+                f"Created overflow draft, remaining {len(remaining_text)} chars"
+            )
 
         return True
 
@@ -184,7 +189,9 @@ class StreamingMessageHandler:
             return False
 
         chunk_size = len(new_text_chunk)
-        logger.debug(f"Received chunk: {chunk_size} chars, accumulated before: {len(self.accumulated_text)} chars")
+        logger.debug(
+            f"Received chunk: {chunk_size} chars, accumulated before: {len(self.accumulated_text)} chars"
+        )
 
         # If chunk is large, simulate progressive updates
         if chunk_size > self.min_chars:
@@ -214,7 +221,9 @@ class StreamingMessageHandler:
 
         # Small chunk - normal accumulation
         self.accumulated_text += new_text_chunk
-        logger.debug(f"Accumulated {len(self.accumulated_text)} chars (chunk: {chunk_size} chars)")
+        logger.debug(
+            f"Accumulated {len(self.accumulated_text)} chars (chunk: {chunk_size} chars)"
+        )
 
         # Check for overflow
         if len(self.accumulated_text) >= 4000:
@@ -231,7 +240,9 @@ class StreamingMessageHandler:
         chars_since_update = len(self.accumulated_text) - len(current_draft.text)
         current_draft.char_count_since_update = chars_since_update
 
-        logger.debug(f"Checking update: {chars_since_update} chars since last update, min_chars={self.min_chars}")
+        logger.debug(
+            f"Checking update: {chars_since_update} chars since last update, min_chars={self.min_chars}"
+        )
 
         if self.should_update(current_draft, chars_since_update):
             await self.update_draft(current_draft, self.accumulated_text)
@@ -270,8 +281,7 @@ class StreamingMessageHandler:
         for draft in self.drafts:
             try:
                 await self.bot.delete_message(
-                    chat_id=self.chat_id,
-                    message_id=draft.message_id
+                    chat_id=self.chat_id, message_id=draft.message_id
                 )
                 logger.debug(f"Deleted draft {draft.message_id}")
             except TelegramError as e:

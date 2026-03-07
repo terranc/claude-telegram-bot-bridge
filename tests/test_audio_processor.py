@@ -1,4 +1,5 @@
 import sys
+import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +8,21 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from telegram_bot.utils.audio_processor import AudioProcessor
+
+_NOISY_LOGGERS = ["telegram_bot.utils.audio_processor"]
+_ORIGINAL_LEVELS = {}
+
+
+def setUpModule():
+    for logger_name in _NOISY_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        _ORIGINAL_LEVELS[logger_name] = logger.level
+        logger.setLevel(logging.CRITICAL)
+
+
+def tearDownModule():
+    for logger_name, original_level in _ORIGINAL_LEVELS.items():
+        logging.getLogger(logger_name).setLevel(original_level)
 
 
 class _FakeProcess:

@@ -19,7 +19,9 @@ if __name__ == "__main__":
         os.environ["PROJECT_ROOT"] = str(_Path(path).expanduser().resolve())
 
     if "PROJECT_ROOT" not in os.environ:
-        print("Error: Please specify project path via argument or PROJECT_ROOT environment variable")
+        print(
+            "Error: Please specify project path via argument or PROJECT_ROOT environment variable"
+        )
         sys.exit(1)
 
     from telegram_bot.utils.config import setup_logging

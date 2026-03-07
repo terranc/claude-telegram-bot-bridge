@@ -3,11 +3,12 @@
 import asyncio
 import sys
 import types
+import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -26,6 +27,12 @@ config_module.config = SimpleNamespace(
     ffmpeg_path="ffmpeg",
     volcengine_app_id="test-app-id",
     volcengine_token="test-token",
+    volcengine_access_key="test-ak",
+    volcengine_secret_access_key="test-sk",
+    volcengine_tos_bucket_name="voice-stage",
+    volcengine_tos_endpoint="https://tos-cn-shanghai.volces.com",
+    volcengine_tos_region="cn-shanghai",
+    volcengine_tos_signed_url_ttl_seconds=900,
     volcengine_cluster="volcengine_streaming_common",
     volcengine_resource_id="volc.bigasr.auc",
     volcengine_model_name="bigmodel",
@@ -127,6 +134,21 @@ sys.modules["claude_code_sdk.types"] = permission_module
 import telegram_bot.core.bot as bot_module
 from telegram_bot.core.bot import TelegramBot
 from telegram_bot.utils.transcription import EmptyTranscriptionError
+
+_NOISY_LOGGERS = ["telegram_bot.core.bot"]
+_ORIGINAL_LEVELS = {}
+
+
+def setUpModule():
+    for logger_name in _NOISY_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        _ORIGINAL_LEVELS[logger_name] = logger.level
+        logger.setLevel(logging.CRITICAL)
+
+
+def tearDownModule():
+    for logger_name, original_level in _ORIGINAL_LEVELS.items():
+        logging.getLogger(logger_name).setLevel(original_level)
 
 
 class _FakeMessage:
@@ -298,7 +320,7 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
         called_text = bot._process_user_message_text.await_args.args[2]
         self.assertEqual(called_text, "hello from voice")
 
-    async def test_successful_volcengine_transcription_uses_file_url(self):
+    async def test_successful_volcengine_transcription_uses_tos_url(self):
         bot = TelegramBot()
         bot._check_access = AsyncMock(return_value=True)
 
@@ -316,10 +338,16 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
         bot._prepare_audio_for_whisper = AsyncMock(
             side_effect=lambda path, cleanup: path
         )
-        bot._build_telegram_file_url = AsyncMock(
-            return_value="https://api.telegram.org/file/bot123/voice.ogg"
-        )
         bot._process_user_message_text = AsyncMock()
+        uploader = SimpleNamespace(
+            upload_file=MagicMock(
+                return_value="https://tos.example.com/stage/voice.ogg?X-Tos-Signature=abc"
+            ),
+            redact_signed_url=lambda url: (
+                "https://tos.example.com/stage/voice.ogg?***REDACTED***"
+            ),
+        )
+        bot._get_volcengine_tos_uploader = lambda: uploader
         transcriber = SimpleNamespace(
             transcribe_audio=AsyncMock(return_value="hello from volcengine")
         )
@@ -335,12 +363,12 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
             config_module.config.transcription_provider = old_provider
             bot_module.config.transcription_provider = old_provider
 
-        bot._build_telegram_file_url.assert_awaited_once_with("v1")
+        bot._download_voice_file.assert_awaited_once()
+        self.assertEqual(uploader.upload_file.call_count, 1)
         transcriber.transcribe_audio.assert_awaited_once_with(
-            "https://api.telegram.org/file/bot123/voice.ogg",
+            "https://tos.example.com/stage/voice.ogg?X-Tos-Signature=abc",
             duration_seconds=30,
         )
-        bot._download_voice_file.assert_not_called()
         bot._prepare_audio_for_whisper.assert_not_called()
         self.assertTrue(
             any(msg.startswith("🎤 Voice: ") for msg in update.message.replies)
@@ -360,9 +388,6 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
             return True
 
         bot._enqueue_user_task = run_now
-        bot._build_telegram_file_url = AsyncMock(
-            return_value="https://api.telegram.org/file/bot123/voice.ogg"
-        )
 
         def raise_missing_config():
             raise ValueError("missing Volcengine credentials")
@@ -385,7 +410,43 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
                 for msg in update.message.replies
             )
         )
-        bot._build_telegram_file_url.assert_not_called()
+
+    async def test_reports_missing_volcengine_dependency(self):
+        bot = TelegramBot()
+        bot._check_access = AsyncMock(return_value=True)
+
+        old_provider = bot_module.config.transcription_provider
+        config_module.config.transcription_provider = "volcengine"
+        bot_module.config.transcription_provider = "volcengine"
+
+        async def run_now(user_id, run_task, on_overflow):
+            del user_id, on_overflow
+            await run_task()
+            return True
+
+        bot._enqueue_user_task = run_now
+
+        def raise_missing_dependency():
+            raise RuntimeError("tos package is not installed")
+
+        bot._get_volcengine_transcriber = lambda: SimpleNamespace(
+            transcribe_audio=AsyncMock(return_value="unused")
+        )
+        bot._get_volcengine_tos_uploader = raise_missing_dependency
+        voice = SimpleNamespace(file_id="v1", duration=30, mime_type="audio/ogg")
+        update = _build_update(11, voice)
+
+        try:
+            with TemporaryDirectory() as td:
+                bot._audio_dir = Path(td)
+                await bot._handle_voice_message(update, None)
+        finally:
+            config_module.config.transcription_provider = old_provider
+            bot_module.config.transcription_provider = old_provider
+
+        self.assertTrue(
+            any("dependency is missing" in msg for msg in update.message.replies)
+        )
 
     async def test_stop_cancels_active_voice_tasks(self):
         bot = TelegramBot()

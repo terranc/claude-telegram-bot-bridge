@@ -50,6 +50,54 @@ class VoiceProviderConfigTests(unittest.TestCase):
                     _env_file=None,
                 )
 
+    def test_volcengine_provider_requires_bucket_name(self):
+        with TemporaryDirectory() as td:
+            module = self._load_config_module(td)
+            with self.assertRaises(ValidationError):
+                module.Config(
+                    telegram_bot_token="123456:abc",
+                    transcription_provider="volcengine",
+                    volcengine_app_id="app-id",
+                    volcengine_token="token-value",
+                    volcengine_access_key="ak",
+                    volcengine_secret_access_key="sk",
+                    volcengine_tos_bucket_name="",
+                    volcengine_tos_endpoint="https://tos-cn-shanghai.volces.com",
+                    _env_file=None,
+                )
+
+    def test_volcengine_provider_requires_secret_access_key(self):
+        with TemporaryDirectory() as td:
+            module = self._load_config_module(td)
+            with self.assertRaises(ValidationError):
+                module.Config(
+                    telegram_bot_token="123456:abc",
+                    transcription_provider="volcengine",
+                    volcengine_app_id="app-id",
+                    volcengine_token="token-value",
+                    volcengine_access_key="ak",
+                    volcengine_secret_access_key="",
+                    volcengine_tos_bucket_name="voice-stage",
+                    volcengine_tos_endpoint="https://tos-cn-shanghai.volces.com",
+                    _env_file=None,
+                )
+
+    def test_volcengine_provider_requires_tos_endpoint(self):
+        with TemporaryDirectory() as td:
+            module = self._load_config_module(td)
+            with self.assertRaises(ValidationError):
+                module.Config(
+                    telegram_bot_token="123456:abc",
+                    transcription_provider="volcengine",
+                    volcengine_app_id="app-id",
+                    volcengine_token="token-value",
+                    volcengine_access_key="ak",
+                    volcengine_secret_access_key="sk",
+                    volcengine_tos_bucket_name="voice-stage",
+                    volcengine_tos_endpoint="",
+                    _env_file=None,
+                )
+
     def test_volcengine_provider_with_new_credentials_is_valid(self):
         with TemporaryDirectory() as td:
             module = self._load_config_module(td)
@@ -58,6 +106,10 @@ class VoiceProviderConfigTests(unittest.TestCase):
                 transcription_provider="volcengine",
                 volcengine_app_id="app-id",
                 volcengine_token="token-value",
+                volcengine_access_key="ak",
+                volcengine_secret_access_key="sk",
+                volcengine_tos_bucket_name="voice-stage",
+                volcengine_tos_endpoint="https://tos-cn-shanghai.volces.com",
                 _env_file=None,
             )
             self.assertEqual(cfg.transcription_provider, "volcengine")
@@ -71,6 +123,10 @@ class VoiceProviderConfigTests(unittest.TestCase):
                 transcription_provider="volcengine",
                 volcengine_app_id="app-id",
                 volcengine_token="token-value",
+                volcengine_access_key="ak",
+                volcengine_secret_access_key="sk",
+                volcengine_tos_bucket_name="voice-stage",
+                volcengine_tos_endpoint="https://tos-cn-shanghai.volces.com",
                 volcengine_cluster="",
                 _env_file=None,
             )

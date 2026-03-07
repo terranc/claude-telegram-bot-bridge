@@ -46,7 +46,7 @@ def log_chat(
 
     # Debug mode: also print to terminal
     if os.environ.get("BOT_DEBUG"):
-        print(f"\n{'='*60}\n{entry}{'='*60}", file=sys.stderr, flush=True)
+        print(f"\n{'=' * 60}\n{entry}{'=' * 60}", file=sys.stderr, flush=True)
 
     # Session log file: debug mode only
     if os.environ.get("BOT_DEBUG"):
@@ -62,4 +62,8 @@ def log_debug(user_id: int, role: str, content: str):
     if not os.environ.get("BOT_DEBUG"):
         return
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\n{'='*60}\n[{ts}] [{role}] [user={user_id}]\n{content}\n{'='*60}", file=sys.stderr, flush=True)
+    print(
+        f"\n{'=' * 60}\n[{ts}] [{role}] [user={user_id}]\n{content}\n{'=' * 60}",
+        file=sys.stderr,
+        flush=True,
+    )

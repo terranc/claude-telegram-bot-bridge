@@ -50,5 +50,5 @@ class TestRevertCallbackParsing(unittest.TestCase):
             self.assertEqual(parts[3], mode)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

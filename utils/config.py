@@ -128,6 +128,25 @@ class Config(BaseSettings):
     volcengine_token: Optional[str] = Field(
         default=None, description="Volcengine token for bigmodel file ASR"
     )
+    volcengine_access_key: Optional[str] = Field(
+        default=None, description="Volcengine Access Key for TOS upload"
+    )
+    volcengine_secret_access_key: Optional[str] = Field(
+        default=None, description="Volcengine Secret Access Key for TOS upload"
+    )
+    volcengine_tos_bucket_name: Optional[str] = Field(
+        default=None, description="Volcengine TOS bucket name for staging voice files"
+    )
+    volcengine_tos_endpoint: str = Field(
+        default="", description="Volcengine TOS endpoint URL"
+    )
+    volcengine_tos_region: str = Field(
+        default="cn-beijing", description="Volcengine TOS region"
+    )
+    volcengine_tos_signed_url_ttl_seconds: int = Field(
+        default=900,
+        description="Signed URL TTL in seconds for Volcengine ASR to fetch staged voice file",
+    )
     volcengine_cluster: str = Field(
         default="volc_auc_common",
         description="Volcengine cluster (reserved for compatibility)",
@@ -199,6 +218,9 @@ class Config(BaseSettings):
     @field_validator(
         "volcengine_app_id",
         "volcengine_token",
+        "volcengine_access_key",
+        "volcengine_secret_access_key",
+        "volcengine_tos_bucket_name",
         "volcengine_cluster",
         mode="before",
     )
@@ -217,6 +239,7 @@ class Config(BaseSettings):
         "volcengine_query_endpoint",
         "volcengine_resource_id",
         "volcengine_model_name",
+        "volcengine_tos_region",
     )
     @classmethod
     def validate_volcengine_required_text(cls, v, info):
@@ -268,6 +291,13 @@ class Config(BaseSettings):
             raise ValueError("VOLCENGINE_MAX_POLL_SECONDS must be positive.")
         return v
 
+    @field_validator("volcengine_tos_signed_url_ttl_seconds")
+    @classmethod
+    def validate_volcengine_tos_signed_url_ttl_seconds(cls, v):
+        if v <= 0:
+            raise ValueError("VOLCENGINE_TOS_SIGNED_URL_TTL_SECONDS must be positive.")
+        return v
+
     @model_validator(mode="after")
     def validate_provider_specific_config(self):
         if self.transcription_provider != "volcengine":
@@ -278,6 +308,14 @@ class Config(BaseSettings):
             missing.append("VOLCENGINE_APP_ID")
         if not self.volcengine_token:
             missing.append("VOLCENGINE_TOKEN")
+        if not self.volcengine_access_key:
+            missing.append("VOLCENGINE_ACCESS_KEY")
+        if not self.volcengine_secret_access_key:
+            missing.append("VOLCENGINE_SECRET_ACCESS_KEY")
+        if not self.volcengine_tos_bucket_name:
+            missing.append("VOLCENGINE_TOS_BUCKET_NAME")
+        if not self.volcengine_tos_endpoint:
+            missing.append("VOLCENGINE_TOS_ENDPOINT")
         if missing:
             raise ValueError(
                 "Volcengine transcription provider requires: "

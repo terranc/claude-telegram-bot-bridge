@@ -42,6 +42,7 @@ from telegram_bot.utils.transcription import (
     VolcengineFileFastTranscriber,
     WhisperTranscriber,
 )
+from telegram_bot.utils.tos_uploader import TOSUploadError, VolcengineTOSUploader
 
 logger = logging.getLogger(__name__)
 STALE_MESSAGE_SECONDS = 20 * 60  # 20 minutes
@@ -67,6 +68,7 @@ class TelegramBot:
         self._audio_processor = AudioProcessor(ffmpeg_path=config.ffmpeg_path)
         self._whisper_transcriber: Optional[WhisperTranscriber] = None
         self._volcengine_transcriber: Optional[VolcengineFileFastTranscriber] = None
+        self._volcengine_tos_uploader: Optional[VolcengineTOSUploader] = None
 
     # Available models for /model command
     MODELS = [
@@ -1327,6 +1329,18 @@ class TelegramBot:
             )
         return self._volcengine_transcriber
 
+    def _get_volcengine_tos_uploader(self) -> VolcengineTOSUploader:
+        if self._volcengine_tos_uploader is None:
+            self._volcengine_tos_uploader = VolcengineTOSUploader(
+                access_key=config.volcengine_access_key,
+                secret_access_key=config.volcengine_secret_access_key,
+                endpoint=config.volcengine_tos_endpoint,
+                region=config.volcengine_tos_region,
+                bucket_name=config.volcengine_tos_bucket_name,
+                signed_url_ttl_seconds=config.volcengine_tos_signed_url_ttl_seconds,
+            )
+        return self._volcengine_tos_uploader
+
     @staticmethod
     def _get_transcription_provider() -> str:
         return str(getattr(config, "transcription_provider", "whisper")).strip().lower()
@@ -1546,6 +1560,7 @@ class TelegramBot:
                 elif provider == "volcengine":
                     try:
                         transcriber = self._get_volcengine_transcriber()
+                        tos_uploader = self._get_volcengine_tos_uploader()
                     except ValueError as exc:
                         logger.error(
                             "Volcengine transcription is not configured for user %s: %s",
@@ -1558,16 +1573,51 @@ class TelegramBot:
                         )
                         outcome = "missing_volcengine_key"
                         return
+                    except RuntimeError as exc:
+                        logger.error(
+                            "Volcengine transcription dependency is unavailable for user %s: %s",
+                            user_id,
+                            exc,
+                        )
+                        await update.message.reply_text(
+                            "❌ Voice transcription dependency is missing. "
+                            "Please install requirements and restart the bot."
+                        )
+                        outcome = "missing_volcengine_dependency"
+                        return
+
+                    extension = self._resolve_voice_extension(
+                        getattr(voice, "mime_type", None)
+                    )
+                    file_name = self._build_voice_file_name(
+                        user_id=user_id, extension=extension
+                    )
+                    source_path = self._audio_dir / file_name
+                    cleanup_paths.append(source_path)
+                    logger.debug("Voice temp file path: %s", source_path)
 
                     try:
-                        audio_url = await self._build_telegram_file_url(voice.file_id)
-                        logger.debug(
-                            "Using Telegram file URL for Volcengine: %s",
-                            audio_url,
-                        )
+                        await self._download_voice_file(voice, source_path)
                     except Exception as exc:
                         logger.error(
-                            "Failed to build Telegram file URL for user %s: %s",
+                            "Voice file download failed for user %s: %s",
+                            user_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to download your voice message. Please retry."
+                        )
+                        outcome = "download_failed"
+                        return
+
+                    try:
+                        audio_url = await asyncio.to_thread(
+                            tos_uploader.upload_file, source_path, user_id
+                        )
+                    except TOSUploadError as exc:
+                        logger.error(
+                            "Failed to upload voice file to TOS for user %s: %s",
                             user_id,
                             exc,
                             exc_info=True,
@@ -1575,7 +1625,18 @@ class TelegramBot:
                         await update.message.reply_text(
                             "❌ Failed to prepare your voice file for transcription. Please retry."
                         )
-                        outcome = "telegram_file_url_failed"
+                        outcome = "tos_upload_failed"
+                        return
+                    except Exception:
+                        logger.error(
+                            "Unexpected TOS preparation error for user %s",
+                            user_id,
+                            exc_info=True,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to prepare your voice file for transcription. Please retry."
+                        )
+                        outcome = "tos_upload_failed"
                         return
 
                     try:

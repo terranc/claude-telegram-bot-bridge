@@ -240,10 +240,16 @@ Claude:  ...
 | `OPENAI_API_KEY` | 语音功能必需 | — | Whisper 转写所需 OpenAI API Key |
 | `OPENAI_BASE_URL` | 否 | *（官方 OpenAI API）* | OpenAI 兼容 Whisper 接口基础地址 |
 | `WHISPER_MODEL` | 否 | `whisper-1` | Whisper 模型名称 |
-| `VOLCENGINE_APP_KEY` | 火山渠道必需 | — | 火山引擎 `X-Api-App-Key` |
-| `VOLCENGINE_ACCESS_KEY` | 火山渠道必需 | — | 火山引擎 `X-Api-Access-Key` |
-| `VOLCENGINE_RESOURCE_ID` | 否 | `volc.bigasr.auc_turbo` | 火山引擎 `X-Api-Resource-Id` |
-| `VOLCENGINE_ENDPOINT` | 否 | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | 火山引擎录音文件极速版接口地址 |
+| `VOLCENGINE_APP_ID` | 火山渠道必需 | — | 火山转写 `X-Api-App-Key` |
+| `VOLCENGINE_TOKEN` | 火山渠道必需 | — | 火山转写 `X-Api-Access-Key` |
+| `VOLCENGINE_ACCESS_KEY` | 火山渠道必需 | — | TOS Access Key |
+| `VOLCENGINE_SECRET_ACCESS_KEY` | 火山渠道必需 | — | TOS Secret Access Key（在 `https://console.volcengine.com/iam/keymanage` 创建） |
+| `VOLCENGINE_TOS_BUCKET_NAME` | 火山渠道必需 | — | 用于中转语音文件的 TOS Bucket 名称 |
+| `VOLCENGINE_TOS_ENDPOINT` | 火山渠道必需 | — | TOS 节点地址（必须与你的 Bucket 区域匹配，如 `https://tos-cn-shanghai.volces.com`） |
+| `VOLCENGINE_TOS_REGION` | 否 | `cn-beijing` | TOS SDK 使用的 region |
+| `VOLCENGINE_RESOURCE_ID` | 否 | `volc.bigasr.auc` | 火山引擎 `X-Api-Resource-Id` |
+| `VOLCENGINE_SUBMIT_ENDPOINT` | 否 | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit` | 火山转写 submit 接口地址 |
+| `VOLCENGINE_QUERY_ENDPOINT` | 否 | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/query` | 火山转写 query 接口地址 |
 | `VOLCENGINE_MODEL_NAME` | 否 | `bigmodel` | 火山请求参数 `model_name` |
 | `VOLCENGINE_TIMEOUT_SECONDS` | 否 | `20` | 火山请求超时（秒） |
 | `VOLCENGINE_MAX_RETRIES` | 否 | `3` | 火山转写重试次数 |
@@ -258,10 +264,15 @@ Claude:  ...
 - 默认使用 `whisper`。
 - 如需切换到火山引擎录音文件极速版，请设置：
   - `TRANSCRIPTION_PROVIDER=volcengine`
-  - `VOLCENGINE_APP_KEY`
+  - `VOLCENGINE_APP_ID`
+  - `VOLCENGINE_TOKEN`
   - `VOLCENGINE_ACCESS_KEY`
-- 火山渠道下，Bot 会提交 Telegram `getFile` 文件地址，格式为：
-  - `https://api.telegram.org/file/bot<token>/<file_path>`
+  - `VOLCENGINE_SECRET_ACCESS_KEY`
+  - `VOLCENGINE_TOS_BUCKET_NAME`
+  - `VOLCENGINE_TOS_ENDPOINT`
+- Secret Access Key 需要在火山 IAM 控制台创建：
+  - `https://console.volcengine.com/iam/keymanage`
+- 火山渠道下，Bot 现在走 `下载 Telegram 语音 -> 上传 TOS -> 传递签名 TOS URL -> ASR`。
 
 ## ffmpeg 安装
 

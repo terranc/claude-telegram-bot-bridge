@@ -1,4 +1,5 @@
 import sys
+import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,6 +14,21 @@ from telegram_bot.utils.transcription import (
     VolcengineFileFastTranscriber,
     WhisperTranscriber,
 )
+
+_NOISY_LOGGERS = ["telegram_bot.utils.transcription"]
+_ORIGINAL_LEVELS = {}
+
+
+def setUpModule():
+    for logger_name in _NOISY_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        _ORIGINAL_LEVELS[logger_name] = logger.level
+        logger.setLevel(logging.CRITICAL)
+
+
+def tearDownModule():
+    for logger_name, original_level in _ORIGINAL_LEVELS.items():
+        logging.getLogger(logger_name).setLevel(original_level)
 
 
 class _FakeTranscriptions:

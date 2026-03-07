@@ -243,10 +243,16 @@ Any unrecognized `/command` is also forwarded as a skill invocation.
 | `OPENAI_API_KEY` | Voice only | — | OpenAI API key for Whisper transcription |
 | `OPENAI_BASE_URL` | No | *(official OpenAI API)* | OpenAI-compatible Whisper endpoint base URL |
 | `WHISPER_MODEL` | No | `whisper-1` | Whisper model name |
-| `VOLCENGINE_APP_KEY` | Volcengine only | — | Volcengine `X-Api-App-Key` |
-| `VOLCENGINE_ACCESS_KEY` | Volcengine only | — | Volcengine `X-Api-Access-Key` |
-| `VOLCENGINE_RESOURCE_ID` | No | `volc.bigasr.auc_turbo` | Volcengine `X-Api-Resource-Id` |
-| `VOLCENGINE_ENDPOINT` | No | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | Volcengine file-fast ASR endpoint |
+| `VOLCENGINE_APP_ID` | Volcengine only | — | Volcengine ASR `X-Api-App-Key` |
+| `VOLCENGINE_TOKEN` | Volcengine only | — | Volcengine ASR `X-Api-Access-Key` |
+| `VOLCENGINE_ACCESS_KEY` | Volcengine only | — | Volcengine TOS Access Key |
+| `VOLCENGINE_SECRET_ACCESS_KEY` | Volcengine only | — | Volcengine TOS Secret Access Key (create at `https://console.volcengine.com/iam/keymanage`) |
+| `VOLCENGINE_TOS_BUCKET_NAME` | Volcengine only | — | TOS bucket used for staging Telegram voice files |
+| `VOLCENGINE_TOS_ENDPOINT` | Volcengine only | — | TOS endpoint (must match your bucket region, e.g. `https://tos-cn-shanghai.volces.com`) |
+| `VOLCENGINE_TOS_REGION` | No | `cn-beijing` | TOS region used by SDK signing |
+| `VOLCENGINE_RESOURCE_ID` | No | `volc.bigasr.auc` | Volcengine `X-Api-Resource-Id` |
+| `VOLCENGINE_SUBMIT_ENDPOINT` | No | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit` | Volcengine ASR submit endpoint |
+| `VOLCENGINE_QUERY_ENDPOINT` | No | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/query` | Volcengine ASR query endpoint |
 | `VOLCENGINE_MODEL_NAME` | No | `bigmodel` | Volcengine request `model_name` |
 | `VOLCENGINE_TIMEOUT_SECONDS` | No | `20` | Volcengine request timeout (seconds) |
 | `VOLCENGINE_MAX_RETRIES` | No | `3` | Retry count for Volcengine transcription |
@@ -261,10 +267,15 @@ Any unrecognized `/command` is also forwarded as a skill invocation.
 - Default channel is `whisper`.
 - To use Volcengine file-fast ASR, set:
   - `TRANSCRIPTION_PROVIDER=volcengine`
-  - `VOLCENGINE_APP_KEY`
+  - `VOLCENGINE_APP_ID`
+  - `VOLCENGINE_TOKEN`
   - `VOLCENGINE_ACCESS_KEY`
-- In Volcengine mode, the bot submits a Telegram `getFile` URL in this form:
-  - `https://api.telegram.org/file/bot<token>/<file_path>`
+  - `VOLCENGINE_SECRET_ACCESS_KEY`
+  - `VOLCENGINE_TOS_BUCKET_NAME`
+  - `VOLCENGINE_TOS_ENDPOINT`
+- Secret Access Key must be created in Volcengine IAM key management:
+  - `https://console.volcengine.com/iam/keymanage`
+- In Volcengine mode, the bot now uses `download -> TOS upload -> signed TOS URL -> ASR`.
 
 ## ffmpeg Installation
 
