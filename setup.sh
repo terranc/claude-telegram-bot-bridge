@@ -514,6 +514,12 @@ else
     echo -e "${GREEN}✅ Virtual environment created${NC}"
 fi
 
+# On Windows, Python venv creates Scripts/ instead of bin/; create a symlink for compatibility
+if [ ! -d "$VENV_DIR/bin" ] && [ -d "$VENV_DIR/Scripts" ]; then
+    ln -s Scripts "$VENV_DIR/bin"
+    echo "🔗 Created bin -> Scripts symlink for Windows compatibility"
+fi
+
 # Install dependencies
 echo "📦 Installing Python dependencies (this may take a minute)..."
 "$VENV_DIR/bin/pip" install -q --upgrade pip

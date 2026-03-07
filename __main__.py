@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path as _Path
 
@@ -21,6 +22,24 @@ if __name__ == "__main__":
     if "PROJECT_ROOT" not in os.environ:
         print("Error: Please specify project path via argument or PROJECT_ROOT environment variable")
         sys.exit(1)
+
+    # Clear env vars that prevent Claude CLI from launching as a subprocess.
+    # CLAUDECODE is set by running Claude Code sessions; without clearing it the
+    # CLI would refuse to start ("cannot launch inside another session").
+    os.environ.pop("CLAUDECODE", None)
+
+    # Auto-detect Git Bash path on Windows for Claude Code SDK
+    if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
+        git_exe = shutil.which("git")
+        if git_exe:
+            p = _Path(git_exe).resolve()
+            # Walk up from git.exe to find <git-root>/bin/bash.exe
+            for _ in range(5):
+                p = p.parent
+                bash_path = p / "bin" / "bash.exe"
+                if bash_path.exists():
+                    os.environ["CLAUDE_CODE_GIT_BASH_PATH"] = str(bash_path)
+                    break
 
     from telegram_bot.utils.config import setup_logging
     from telegram_bot.core.bot import bot

@@ -470,6 +470,18 @@ load_optional_env() {
         export no_proxy="localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
         echo "🌐 Proxy configured: $proxy_url"
     fi
+
+    # Auto-detect Git Bash path on Windows when not already set.
+    # NOTE: Primary detection is done in Python (__main__.py) using pathlib which
+    # handles Windows backslash paths correctly. The bash-side detection here is
+    # only a fallback for when .env has an explicit value.
+    if [ -z "$CLAUDE_CODE_GIT_BASH_PATH" ]; then
+        local git_bash_path
+        git_bash_path="$(read_env_with_fallback "CLAUDE_CODE_GIT_BASH_PATH")"
+        if [ -n "$git_bash_path" ]; then
+            export CLAUDE_CODE_GIT_BASH_PATH="$git_bash_path"
+        fi
+    fi
 }
 
 maybe_setup_claude_cli() {
@@ -581,6 +593,13 @@ RESTART_DELAY=3
 rapid_crash_count=0
 
 cd "$REPO_ROOT"
+
+# Ensure the package is importable as "telegram_bot"; create a symlink if the
+# repo was cloned under a different directory name (e.g. claude-telegram-bot-bridge)
+if [ "$(basename "$SCRIPT_DIR")" != "telegram_bot" ] && [ ! -e "$REPO_ROOT/telegram_bot" ]; then
+    ln -s "$SCRIPT_DIR" "$REPO_ROOT/telegram_bot"
+    echo "🔗 Created telegram_bot -> $(basename "$SCRIPT_DIR") symlink"
+fi
 
 while true; do
     echo ""

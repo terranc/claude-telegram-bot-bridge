@@ -176,6 +176,10 @@ def setup_logging() -> None:
     logging.getLogger("telegram").setLevel(logging.WARNING)
     logging.getLogger("telegram.ext").setLevel(logging.WARNING)
     logging.getLogger("telegram.ext.ExtBot").setLevel(logging.WARNING)
+    # The Claude SDK uses anyio cancel scopes that raise harmless RuntimeError
+    # on disconnect — asyncio logs these as noisy "Task exception was never
+    # retrieved" ERROR messages.  CRITICAL silences them.
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
     # Daily error log with stack traces and clear separators
     from datetime import datetime

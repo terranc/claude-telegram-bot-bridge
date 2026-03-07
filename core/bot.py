@@ -403,6 +403,8 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("history", self._cmd_history))
         self.application.add_handler(CommandHandler("revert", self._cmd_revert))
         self.application.add_handler(CommandHandler("command", self._cmd_command))
+        self.application.add_handler(CommandHandler("cd", self._cmd_cd))
+        self.application.add_handler(CommandHandler("ls", self._cmd_ls))
         self.application.add_handler(CommandHandler("skill", self._cmd_skill))
 
         # Skill command handler - catches all /commands
@@ -439,7 +441,10 @@ class TelegramBot:
         user_id = update.effective_user.id
         log_debug(user_id, "command", "/skills")
 
-        await update.message.chat.send_action(action="typing")
+        try:
+            await update.message.chat.send_action(action="typing")
+        except Exception:
+            pass
 
         prompt = (
             "List all installed skills, grouped by global and project.\n"
@@ -972,11 +977,20 @@ class TelegramBot:
 
     async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
         """Global error handler for uncaught exceptions in handlers."""
-        logger.error("Unhandled exception:", exc_info=context.error)
+        err = context.error
+        # Transient network errors are expected — log concisely without traceback.
+        if isinstance(err, telegram.error.NetworkError):
+            logger.warning(f"Network error (will retry): {err}")
+            return
+        if isinstance(err, telegram.error.TimedOut):
+            logger.warning(f"Request timed out (will retry): {err}")
+            return
+
+        logger.error("Unhandled exception:", exc_info=err)
         if isinstance(update, Update) and update.effective_chat:
             try:
                 await context.bot.send_message(
-                    update.effective_chat.id, f"❌ Internal error: {context.error}"
+                    update.effective_chat.id, f"❌ Internal error: {err}"
                 )
             except Exception:
                 pass
@@ -1071,6 +1085,8 @@ class TelegramBot:
                 t.result()
             except asyncio.CancelledError:
                 pass
+            except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
+                logger.warning(f"Background task network error for user {user_id}: {e}")
             except Exception as e:
                 logger.error(
                     f"Background task failed for user {user_id}: {e}", exc_info=True
@@ -1121,6 +1137,108 @@ class TelegramBot:
             await on_overflow()
             return False
         return True
+
+    async def _cmd_cd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._check_access(update):
+            return
+
+        from telegram_bot.core.project_chat import PROJECT_ROOT
+
+        user_id = update.effective_user.id
+        args = context.args
+
+        # No args: show current directory
+        if not args:
+            current = project_chat_handler.get_user_cwd(user_id)
+            await update.message.reply_text(
+                f"📂 Current directory: `{current}`\n\nUsage: `/cd <path>` or `/cd ~` to reset",
+                parse_mode="Markdown",
+            )
+            return
+
+        path_str = " ".join(args)
+
+        # ~ resets to original PROJECT_ROOT
+        if path_str.strip() == "~":
+            project_chat_handler.change_directory(user_id, PROJECT_ROOT)
+            await update.message.reply_text(
+                f"📂 Reset to project root:\n`{PROJECT_ROOT}`", parse_mode="Markdown"
+            )
+            return
+
+        # Resolve: absolute or relative to current cwd
+        current = project_chat_handler.get_user_cwd(user_id)
+        raw = FilePath(path_str).expanduser()
+        new_path = (raw if raw.is_absolute() else current / raw).resolve()
+
+        if not new_path.exists():
+            await update.message.reply_text(
+                f"❌ Path not found: `{new_path}`", parse_mode="Markdown"
+            )
+            return
+        if not new_path.is_dir():
+            await update.message.reply_text(
+                f"❌ Not a directory: `{new_path}`", parse_mode="Markdown"
+            )
+            return
+
+        project_chat_handler.change_directory(user_id, new_path)
+
+        reply = f"📂 Working directory changed to:\n`{new_path}`"
+        if not new_path.is_relative_to(PROJECT_ROOT):
+            reply += f"\n\n⚠️ Outside original project root (`{PROJECT_ROOT}`)\nPaths here will require confirmation."
+        await update.message.reply_text(reply, parse_mode="Markdown")
+
+    async def _cmd_ls(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._check_access(update):
+            return
+
+        user_id = update.effective_user.id
+        args = context.args
+
+        current = project_chat_handler.get_user_cwd(user_id)
+
+        if args:
+            path_str = " ".join(args)
+            raw = FilePath(path_str).expanduser()
+            target = (raw if raw.is_absolute() else current / raw).resolve()
+        else:
+            target = current
+
+        if not target.exists():
+            await update.message.reply_text(
+                f"❌ Path not found: `{target}`", parse_mode="Markdown"
+            )
+            return
+        if not target.is_dir():
+            await update.message.reply_text(
+                f"❌ Not a directory: `{target}`", parse_mode="Markdown"
+            )
+            return
+
+        try:
+            entries = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except PermissionError:
+            await update.message.reply_text(
+                f"❌ Permission denied: `{target}`", parse_mode="Markdown"
+            )
+            return
+
+        if not entries:
+            await update.message.reply_text(
+                f"📂 `{target}`\n\n_(empty directory)_", parse_mode="Markdown"
+            )
+            return
+
+        lines = [f"📂 `{target}`\n"]
+        for entry in entries:
+            lines.append(f"📁 `{entry.name}/`" if entry.is_dir() else f"📄 `{entry.name}`")
+
+        text = "\n".join(lines)
+        if len(text) > 4000:
+            text = text[:4000] + "\n…_(truncated)_"
+
+        await update.message.reply_text(text, parse_mode="Markdown")
 
     async def _cmd_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /command xxx - forward as Claude Code slash command"""
@@ -1178,7 +1296,10 @@ class TelegramBot:
 
         async def run_task():
             session = await session_manager.get_session(user_id)
-            await update.message.chat.send_action(action="typing")
+            try:
+                await update.message.chat.send_action(action="typing")
+            except Exception:
+                pass
             try:
                 response = await project_chat_handler.process_message(
                     user_message=slash_cmd,
@@ -2023,6 +2144,8 @@ class TelegramBot:
             BotCommand("skills", "List skills"),
             BotCommand("skill", "Run skill"),
             BotCommand("command", "Run command"),
+            BotCommand("cd", "Change working directory"),
+            BotCommand("ls", "List directory contents"),
         ]
         for scope in (
             BotCommandScopeAllPrivateChats(),
