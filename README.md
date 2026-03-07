@@ -239,13 +239,32 @@ Any unrecognized `/command` is also forwarded as a skill invocation.
 | `CLAUDE_PROCESS_TIMEOUT` | No | `600` | SDK timeout in seconds |
 | `DRAFT_UPDATE_MIN_CHARS` | No | `150` | Minimum characters before streaming draft update |
 | `DRAFT_UPDATE_INTERVAL` | No | `1.0` | Minimum seconds between streaming draft updates |
+| `TRANSCRIPTION_PROVIDER` | No | `whisper` | Voice transcription provider: `whisper` or `volcengine` |
 | `OPENAI_API_KEY` | Voice only | — | OpenAI API key for Whisper transcription |
 | `OPENAI_BASE_URL` | No | *(official OpenAI API)* | OpenAI-compatible Whisper endpoint base URL |
 | `WHISPER_MODEL` | No | `whisper-1` | Whisper model name |
+| `VOLCENGINE_APP_KEY` | Volcengine only | — | Volcengine `X-Api-App-Key` |
+| `VOLCENGINE_ACCESS_KEY` | Volcengine only | — | Volcengine `X-Api-Access-Key` |
+| `VOLCENGINE_RESOURCE_ID` | No | `volc.bigasr.auc_turbo` | Volcengine `X-Api-Resource-Id` |
+| `VOLCENGINE_ENDPOINT` | No | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | Volcengine file-fast ASR endpoint |
+| `VOLCENGINE_MODEL_NAME` | No | `bigmodel` | Volcengine request `model_name` |
+| `VOLCENGINE_TIMEOUT_SECONDS` | No | `20` | Volcengine request timeout (seconds) |
+| `VOLCENGINE_MAX_RETRIES` | No | `3` | Retry count for Volcengine transcription |
+| `VOLCENGINE_INITIAL_BACKOFF` | No | `1.0` | Initial retry backoff seconds for Volcengine |
 | `MAX_VOICE_DURATION` | No | `300` | Max accepted voice duration in seconds |
 | `FFMPEG_PATH` | No | *(auto-detect)* | Absolute path to ffmpeg binary |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 | `PROXY_URL` | No | — | HTTP proxy; auto-configures `http_proxy`/`https_proxy`/`all_proxy` |
+
+## Voice Transcription Channels
+
+- Default channel is `whisper`.
+- To use Volcengine file-fast ASR, set:
+  - `TRANSCRIPTION_PROVIDER=volcengine`
+  - `VOLCENGINE_APP_KEY`
+  - `VOLCENGINE_ACCESS_KEY`
+- In Volcengine mode, the bot submits a Telegram `getFile` URL in this form:
+  - `https://api.telegram.org/file/bot<token>/<file_path>`
 
 ## ffmpeg Installation
 

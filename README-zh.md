@@ -236,13 +236,32 @@ Claude:  ...
 | `CLAUDE_PROCESS_TIMEOUT` | 否 | `600` | SDK 超时时间（秒） |
 | `DRAFT_UPDATE_MIN_CHARS` | 否 | `150` | 流式响应草稿更新的最小字符数 |
 | `DRAFT_UPDATE_INTERVAL` | 否 | `1.0` | 流式响应草稿更新的最小间隔（秒） |
+| `TRANSCRIPTION_PROVIDER` | 否 | `whisper` | 语音转写渠道：`whisper` 或 `volcengine` |
 | `OPENAI_API_KEY` | 语音功能必需 | — | Whisper 转写所需 OpenAI API Key |
 | `OPENAI_BASE_URL` | 否 | *（官方 OpenAI API）* | OpenAI 兼容 Whisper 接口基础地址 |
 | `WHISPER_MODEL` | 否 | `whisper-1` | Whisper 模型名称 |
+| `VOLCENGINE_APP_KEY` | 火山渠道必需 | — | 火山引擎 `X-Api-App-Key` |
+| `VOLCENGINE_ACCESS_KEY` | 火山渠道必需 | — | 火山引擎 `X-Api-Access-Key` |
+| `VOLCENGINE_RESOURCE_ID` | 否 | `volc.bigasr.auc_turbo` | 火山引擎 `X-Api-Resource-Id` |
+| `VOLCENGINE_ENDPOINT` | 否 | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | 火山引擎录音文件极速版接口地址 |
+| `VOLCENGINE_MODEL_NAME` | 否 | `bigmodel` | 火山请求参数 `model_name` |
+| `VOLCENGINE_TIMEOUT_SECONDS` | 否 | `20` | 火山请求超时（秒） |
+| `VOLCENGINE_MAX_RETRIES` | 否 | `3` | 火山转写重试次数 |
+| `VOLCENGINE_INITIAL_BACKOFF` | 否 | `1.0` | 火山转写初始重试退避时间（秒） |
 | `MAX_VOICE_DURATION` | 否 | `300` | 允许的最大语音时长（秒） |
 | `FFMPEG_PATH` | 否 | *（自动检测）* | ffmpeg 二进制绝对路径 |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别 |
 | `PROXY_URL` | 否 | — | HTTP 代理；自动配置 `http_proxy`/`https_proxy`/`all_proxy` |
+
+## 语音转写渠道
+
+- 默认使用 `whisper`。
+- 如需切换到火山引擎录音文件极速版，请设置：
+  - `TRANSCRIPTION_PROVIDER=volcengine`
+  - `VOLCENGINE_APP_KEY`
+  - `VOLCENGINE_ACCESS_KEY`
+- 火山渠道下，Bot 会提交 Telegram `getFile` 文件地址，格式为：
+  - `https://api.telegram.org/file/bot<token>/<file_path>`
 
 ## ffmpeg 安装
 

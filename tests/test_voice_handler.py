@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -18,10 +19,23 @@ config_module.config = SimpleNamespace(
     claude_settings_path=Path("/tmp/settings.json"),
     max_voice_duration=300,
     bot_data_dir=Path("/tmp/telegram-bot-data"),
+    transcription_provider="whisper",
     openai_api_key="test-key",
     openai_base_url=None,
     whisper_model="whisper-1",
     ffmpeg_path="ffmpeg",
+    volcengine_app_id="test-app-id",
+    volcengine_token="test-token",
+    volcengine_cluster="volcengine_streaming_common",
+    volcengine_resource_id="volc.bigasr.auc",
+    volcengine_model_name="bigmodel",
+    volcengine_submit_endpoint="https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit",
+    volcengine_query_endpoint="https://openspeech.bytedance.com/api/v3/auc/bigmodel/query",
+    volcengine_timeout_seconds=20.0,
+    volcengine_max_retries=3,
+    volcengine_initial_backoff=1.0,
+    volcengine_poll_interval_seconds=2.0,
+    volcengine_max_poll_seconds=300.0,
     draft_update_min_chars=20,
     draft_update_interval=0.1,
 )
@@ -93,6 +107,7 @@ class _ProjectChatHandler:
 project_chat_module.project_chat_handler = _ProjectChatHandler()
 project_chat_module.ChatResponse = _ChatResponse
 project_chat_module.PROJECT_ROOT = Path("/tmp")
+project_chat_module.CONVERSATIONS_DIR = Path("/tmp/conversations")
 sys.modules["telegram_bot.core.project_chat"] = project_chat_module
 
 
@@ -160,6 +175,43 @@ class VoiceHandlerHelperTests(unittest.IsolatedAsyncioTestCase):
             bot = TelegramBot()
             removed = await bot._cleanup_stale_audio_files(audio_dir, max_age_seconds=0)
             self.assertGreaterEqual(removed, 1)
+
+    async def test_build_telegram_file_url_supports_relative_path(self):
+        bot = TelegramBot()
+        bot.application = SimpleNamespace(
+            bot=SimpleNamespace(
+                get_file=AsyncMock(
+                    return_value=SimpleNamespace(file_path="voice/file_10.oga")
+                )
+            )
+        )
+
+        url = await bot._build_telegram_file_url("voice-file-id")
+        self.assertEqual(
+            url,
+            "https://api.telegram.org/file/bottest-token/voice/file_10.oga",
+        )
+
+    async def test_build_telegram_file_url_supports_absolute_url(self):
+        bot = TelegramBot()
+        absolute = "https://api.telegram.org/file/bot123456:ABC/voice/file_10.oga"
+        bot.application = SimpleNamespace(
+            bot=SimpleNamespace(
+                get_file=AsyncMock(return_value=SimpleNamespace(file_path=absolute))
+            )
+        )
+
+        url = await bot._build_telegram_file_url("voice-file-id")
+        self.assertEqual(url, absolute)
+
+    def test_redact_telegram_file_url_masks_all_bot_tokens(self):
+        bot = TelegramBot()
+        source = "https://api.telegram.org/file/botA/https://api.telegram.org/file/botB/voice/file_10.oga"
+        redacted = bot._redact_telegram_file_url(source)
+        self.assertEqual(
+            redacted,
+            "https://api.telegram.org/file/bot***REDACTED***/https://api.telegram.org/file/bot***REDACTED***/voice/file_10.oga",
+        )
 
 
 if __name__ == "__main__":

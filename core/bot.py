@@ -28,13 +28,18 @@ from telegram.ext import (
 )
 from telegram_bot.utils.config import config
 from telegram_bot.session.manager import session_manager
-from telegram_bot.core.project_chat import project_chat_handler, ChatResponse, CONVERSATIONS_DIR
+from telegram_bot.core.project_chat import (
+    project_chat_handler,
+    ChatResponse,
+    CONVERSATIONS_DIR,
+)
 from claude_code_sdk.types import PermissionResultAllow, PermissionResultDeny
 from telegram_bot.utils.chat_logger import log_debug
 from telegram_bot.utils.audio_processor import AudioProcessor
 from telegram_bot.utils.transcription import (
     EmptyTranscriptionError,
     TranscriptionError,
+    VolcengineFileFastTranscriber,
     WhisperTranscriber,
 )
 
@@ -61,6 +66,7 @@ class TelegramBot:
         self._audio_dir = config.bot_data_dir / "audio"
         self._audio_processor = AudioProcessor(ffmpeg_path=config.ffmpeg_path)
         self._whisper_transcriber: Optional[WhisperTranscriber] = None
+        self._volcengine_transcriber: Optional[VolcengineFileFastTranscriber] = None
 
     # Available models for /model command
     MODELS = [
@@ -325,7 +331,9 @@ class TelegramBot:
             session.pop("pending_outside_paths", None)
             await session_manager.update_session(user_id, session)
 
-    async def _permission_callback(self, chat_id: int, user_id: int, tool_name: str, tool_input: Any):
+    async def _permission_callback(
+        self, chat_id: int, user_id: int, tool_name: str, tool_input: Any
+    ):
         """Handle tool permission requests.
 
         All interactive requests are denied so Claude falls back to numbered
@@ -683,6 +691,7 @@ class TelegramBot:
             # Format timestamp
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                 ts_str = dt.strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
@@ -761,7 +770,9 @@ class TelegramBot:
         if action == "page":
             # Handle pagination
             page = int(parts[2])
-            messages = project_chat_handler.get_conversation_history(session_id, limit=50)
+            messages = project_chat_handler.get_conversation_history(
+                session_id, limit=50
+            )
             keyboard = self._build_history_keyboard(messages, page=page)
             await query.edit_message_reply_markup(reply_markup=keyboard)
 
@@ -771,7 +782,9 @@ class TelegramBot:
             keyboard = self._build_revert_mode_keyboard(msg_index)
 
             # Get selected message details for context
-            messages = project_chat_handler.get_conversation_history(session_id, limit=50)
+            messages = project_chat_handler.get_conversation_history(
+                session_id, limit=50
+            )
             selected_msg = next((m for m in messages if m["index"] == msg_index), None)
 
             if selected_msg:
@@ -800,7 +813,9 @@ class TelegramBot:
             await query.edit_message_text("⏳ Reverting to selected message...")
 
             # Get selected message info BEFORE revert (since it will be deleted)
-            messages = project_chat_handler.get_conversation_history(session_id, limit=50)
+            messages = project_chat_handler.get_conversation_history(
+                session_id, limit=50
+            )
             selected_msg = next((m for m in messages if m["index"] == msg_index), None)
 
             timestamp_str = ""
@@ -809,10 +824,13 @@ class TelegramBot:
                 timestamp = selected_msg.get("timestamp", "")
                 try:
                     from datetime import datetime
+
                     dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                     timestamp_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
-                    timestamp_str = timestamp[:19] if len(timestamp) >= 19 else timestamp
+                    timestamp_str = (
+                        timestamp[:19] if len(timestamp) >= 19 else timestamp
+                    )
 
                 # Get content preview
                 content = selected_msg.get("content", "")
@@ -820,7 +838,9 @@ class TelegramBot:
                 content_preview = content_preview.replace("\n", " ")
 
             try:
-                success = await self._execute_revert(user_id, session_id, msg_index, mode)
+                success = await self._execute_revert(
+                    user_id, session_id, msg_index, mode
+                )
 
                 if success:
                     if timestamp_str and content_preview:
@@ -835,7 +855,9 @@ class TelegramBot:
                             f"✅ Reverted to before [{timestamp_str}]. Conversation state restored."
                         )
                     else:
-                        await query.edit_message_text("✅ Revert completed successfully.")
+                        await query.edit_message_text(
+                            "✅ Revert completed successfully."
+                        )
                 else:
                     await query.edit_message_text("❌ Revert operation failed")
 
@@ -863,7 +885,9 @@ class TelegramBot:
 
             if mode == "summary":
                 # Summarize mode: inject summary request message
-                return await self._execute_summarize_mode(user_id, session_id, msg_index)
+                return await self._execute_summarize_mode(
+                    user_id, session_id, msg_index
+                )
             else:
                 # Revert modes: truncate conversation and/or code
                 # Note: Code revert (mode="code" or mode="full") currently only reverts
@@ -1285,6 +1309,47 @@ class TelegramBot:
             )
         return self._whisper_transcriber
 
+    def _get_volcengine_transcriber(self) -> VolcengineFileFastTranscriber:
+        if self._volcengine_transcriber is None:
+            self._volcengine_transcriber = VolcengineFileFastTranscriber(
+                app_id=config.volcengine_app_id,
+                token=config.volcengine_token,
+                cluster=config.volcengine_cluster,
+                resource_id=config.volcengine_resource_id,
+                model_name=config.volcengine_model_name,
+                submit_endpoint=config.volcengine_submit_endpoint,
+                query_endpoint=config.volcengine_query_endpoint,
+                request_timeout=config.volcengine_timeout_seconds,
+                max_retries=config.volcengine_max_retries,
+                initial_backoff=config.volcengine_initial_backoff,
+                poll_interval_seconds=config.volcengine_poll_interval_seconds,
+                max_poll_seconds=config.volcengine_max_poll_seconds,
+            )
+        return self._volcengine_transcriber
+
+    @staticmethod
+    def _get_transcription_provider() -> str:
+        return str(getattr(config, "transcription_provider", "whisper")).strip().lower()
+
+    @staticmethod
+    def _redact_telegram_file_url(url: str) -> str:
+        return re.sub(r"/bot[^/]+/", "/bot***REDACTED***/", url)
+
+    async def _build_telegram_file_url(self, file_id: str) -> str:
+        if not self.application or not self.application.bot:
+            raise RuntimeError("Telegram bot application is unavailable.")
+
+        telegram_file = await self.application.bot.get_file(file_id)
+        file_path = str(getattr(telegram_file, "file_path", "") or "").strip()
+        if file_path.startswith(("http://", "https://")):
+            return file_path
+
+        normalized_path = file_path.lstrip("/")
+        if not normalized_path:
+            raise RuntimeError("Telegram file path is unavailable.")
+
+        return f"https://api.telegram.org/file/bot{config.telegram_bot_token}/{normalized_path}"
+
     async def _download_voice_file(self, voice, destination: FilePath) -> None:
         telegram_file = await self.application.bot.get_file(voice.file_id)
         logger.debug("Downloading voice file to %s", destination)
@@ -1403,76 +1468,148 @@ class TelegramBot:
                     outcome = "duration_limit_exceeded"
                     return
 
-                extension = self._resolve_voice_extension(
-                    getattr(voice, "mime_type", None)
-                )
-                file_name = self._build_voice_file_name(
-                    user_id=user_id, extension=extension
-                )
-                source_path = self._audio_dir / file_name
-                cleanup_paths.append(source_path)
-                logger.debug("Voice temp file path: %s", source_path)
+                provider = self._get_transcription_provider()
+                if provider == "whisper":
+                    extension = self._resolve_voice_extension(
+                        getattr(voice, "mime_type", None)
+                    )
+                    file_name = self._build_voice_file_name(
+                        user_id=user_id, extension=extension
+                    )
+                    source_path = self._audio_dir / file_name
+                    cleanup_paths.append(source_path)
+                    logger.debug("Voice temp file path: %s", source_path)
 
-                try:
-                    await self._download_voice_file(voice, source_path)
-                except Exception as exc:
+                    try:
+                        await self._download_voice_file(voice, source_path)
+                    except Exception as exc:
+                        logger.error(
+                            "Voice file download failed for user %s: %s",
+                            user_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to download your voice message. Please retry."
+                        )
+                        outcome = "download_failed"
+                        return
+
+                    try:
+                        audio_path = await self._prepare_audio_for_whisper(
+                            source_path, cleanup_paths
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Voice conversion failed for user %s: %s",
+                            user_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to convert audio for transcription. "
+                            "Please ensure ffmpeg is installed and try again."
+                        )
+                        outcome = "conversion_failed"
+                        return
+
+                    try:
+                        transcriber = self._get_whisper_transcriber()
+                    except ValueError:
+                        await update.message.reply_text(
+                            "❌ Voice transcription is not configured. Please set OPENAI_API_KEY."
+                        )
+                        outcome = "missing_openai_key"
+                        return
+
+                    try:
+                        text = await transcriber.transcribe_audio(
+                            audio_path, duration_seconds=voice.duration
+                        )
+                    except EmptyTranscriptionError:
+                        await update.message.reply_text(
+                            "❌ No speech was detected in your voice message. Please try again."
+                        )
+                        outcome = "empty_transcription"
+                        return
+                    except TranscriptionError as exc:
+                        logger.error(
+                            "Whisper transcription failed for user %s: %s",
+                            user_id,
+                            exc,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to transcribe your voice message. Please try again later."
+                        )
+                        outcome = "transcription_failed"
+                        return
+                elif provider == "volcengine":
+                    try:
+                        transcriber = self._get_volcengine_transcriber()
+                    except ValueError as exc:
+                        logger.error(
+                            "Volcengine transcription is not configured for user %s: %s",
+                            user_id,
+                            exc,
+                        )
+                        await update.message.reply_text(
+                            "❌ Voice transcription is not configured. "
+                            "Please set Volcengine credentials in .env."
+                        )
+                        outcome = "missing_volcengine_key"
+                        return
+
+                    try:
+                        audio_url = await self._build_telegram_file_url(voice.file_id)
+                        logger.debug(
+                            "Using Telegram file URL for Volcengine: %s",
+                            audio_url,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to build Telegram file URL for user %s: %s",
+                            user_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to prepare your voice file for transcription. Please retry."
+                        )
+                        outcome = "telegram_file_url_failed"
+                        return
+
+                    try:
+                        text = await transcriber.transcribe_audio(
+                            audio_url, duration_seconds=voice.duration
+                        )
+                    except EmptyTranscriptionError:
+                        await update.message.reply_text(
+                            "❌ No speech was detected in your voice message. Please try again."
+                        )
+                        outcome = "empty_transcription"
+                        return
+                    except TranscriptionError as exc:
+                        logger.error(
+                            "Volcengine transcription failed for user %s: %s",
+                            user_id,
+                            exc,
+                        )
+                        await update.message.reply_text(
+                            "❌ Failed to transcribe your voice message. Please try again later."
+                        )
+                        outcome = "transcription_failed"
+                        return
+                else:
                     logger.error(
-                        "Voice file download failed for user %s: %s",
+                        "Unsupported transcription provider '%s' for user %s",
+                        provider,
                         user_id,
-                        exc,
-                        exc_info=True,
                     )
                     await update.message.reply_text(
-                        "❌ Failed to download your voice message. Please retry."
+                        "❌ Voice transcription provider is invalid. "
+                        "Please check TRANSCRIPTION_PROVIDER."
                     )
-                    outcome = "download_failed"
-                    return
-
-                try:
-                    audio_path = await self._prepare_audio_for_whisper(
-                        source_path, cleanup_paths
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Voice conversion failed for user %s: %s",
-                        user_id,
-                        exc,
-                        exc_info=True,
-                    )
-                    await update.message.reply_text(
-                        "❌ Failed to convert audio for transcription. "
-                        "Please ensure ffmpeg is installed and try again."
-                    )
-                    outcome = "conversion_failed"
-                    return
-
-                try:
-                    transcriber = self._get_whisper_transcriber()
-                except ValueError:
-                    await update.message.reply_text(
-                        "❌ Voice transcription is not configured. Please set OPENAI_API_KEY."
-                    )
-                    outcome = "missing_openai_key"
-                    return
-
-                try:
-                    text = await transcriber.transcribe_audio(
-                        audio_path, duration_seconds=voice.duration
-                    )
-                except EmptyTranscriptionError:
-                    await update.message.reply_text(
-                        "❌ No speech was detected in your voice message. Please try again."
-                    )
-                    outcome = "empty_transcription"
-                    return
-                except TranscriptionError as exc:
-                    logger.error(
-                        "Whisper transcription failed for user %s: %s", user_id, exc
-                    )
-                    await update.message.reply_text(
-                        "❌ Failed to transcribe your voice message. Please try again later."
-                    )
-                    outcome = "transcription_failed"
+                    outcome = "invalid_provider"
                     return
 
                 preview = f"🎤 Voice: {text}"
@@ -1677,11 +1814,13 @@ class TelegramBot:
 
         if page > 0:
             pagination_row.append(
-                InlineKeyboardButton("◀️ Previous", callback_data=f"revert:page:{page-1}")
+                InlineKeyboardButton(
+                    "◀️ Previous", callback_data=f"revert:page:{page - 1}"
+                )
             )
         if page < total_pages - 1:
             pagination_row.append(
-                InlineKeyboardButton("Next ▶️", callback_data=f"revert:page:{page+1}")
+                InlineKeyboardButton("Next ▶️", callback_data=f"revert:page:{page + 1}")
             )
 
         if pagination_row:
@@ -1706,6 +1845,7 @@ class TelegramBot:
 
         try:
             from datetime import datetime, timezone
+
             dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
             diff = now - dt
@@ -1753,26 +1893,35 @@ class TelegramBot:
             InlineKeyboardMarkup with 5 revert mode options
         """
         buttons = [
-            [InlineKeyboardButton(
-                "🔄 Restore code and conversation",
-                callback_data=f"revert:mode:{msg_index}:full"
-            )],
-            [InlineKeyboardButton(
-                "💬 Restore conversation only",
-                callback_data=f"revert:mode:{msg_index}:conv"
-            )],
-            [InlineKeyboardButton(
-                "📝 Restore code only",
-                callback_data=f"revert:mode:{msg_index}:code"
-            )],
-            [InlineKeyboardButton(
-                "📋 Summarize from here",
-                callback_data=f"revert:mode:{msg_index}:summary"
-            )],
-            [InlineKeyboardButton(
-                "❌ Cancel",
-                callback_data=f"revert:mode:{msg_index}:cancel"
-            )],
+            [
+                InlineKeyboardButton(
+                    "🔄 Restore code and conversation",
+                    callback_data=f"revert:mode:{msg_index}:full",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💬 Restore conversation only",
+                    callback_data=f"revert:mode:{msg_index}:conv",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "📝 Restore code only",
+                    callback_data=f"revert:mode:{msg_index}:code",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "📋 Summarize from here",
+                    callback_data=f"revert:mode:{msg_index}:summary",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ Cancel", callback_data=f"revert:mode:{msg_index}:cancel"
+                )
+            ],
         ]
         return InlineKeyboardMarkup(buttons)
 

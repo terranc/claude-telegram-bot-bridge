@@ -19,10 +19,23 @@ config_module.config = SimpleNamespace(
     claude_settings_path=Path("/tmp/settings.json"),
     max_voice_duration=300,
     bot_data_dir=Path("/tmp/telegram-bot-data"),
+    transcription_provider="whisper",
     openai_api_key="test-key",
     openai_base_url=None,
     whisper_model="whisper-1",
     ffmpeg_path="ffmpeg",
+    volcengine_app_id="test-app-id",
+    volcengine_token="test-token",
+    volcengine_cluster="volcengine_streaming_common",
+    volcengine_resource_id="volc.bigasr.auc",
+    volcengine_model_name="bigmodel",
+    volcengine_submit_endpoint="https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit",
+    volcengine_query_endpoint="https://openspeech.bytedance.com/api/v3/auc/bigmodel/query",
+    volcengine_timeout_seconds=20.0,
+    volcengine_max_retries=3,
+    volcengine_initial_backoff=1.0,
+    volcengine_poll_interval_seconds=2.0,
+    volcengine_max_poll_seconds=300.0,
     draft_update_min_chars=20,
     draft_update_interval=0.1,
 )
@@ -94,6 +107,7 @@ class _ProjectChatHandler:
 project_chat_module.project_chat_handler = _ProjectChatHandler()
 project_chat_module.ChatResponse = _ChatResponse
 project_chat_module.PROJECT_ROOT = Path("/tmp")
+project_chat_module.CONVERSATIONS_DIR = Path("/tmp/conversations")
 sys.modules["telegram_bot.core.project_chat"] = project_chat_module
 
 
@@ -110,6 +124,7 @@ permission_module.PermissionResultDeny = type(
 sys.modules["claude_code_sdk.types"] = permission_module
 
 
+import telegram_bot.core.bot as bot_module
 from telegram_bot.core.bot import TelegramBot
 from telegram_bot.utils.transcription import EmptyTranscriptionError
 
@@ -282,6 +297,95 @@ class VoiceFlowTests(unittest.IsolatedAsyncioTestCase):
         bot._process_user_message_text.assert_awaited_once()
         called_text = bot._process_user_message_text.await_args.args[2]
         self.assertEqual(called_text, "hello from voice")
+
+    async def test_successful_volcengine_transcription_uses_file_url(self):
+        bot = TelegramBot()
+        bot._check_access = AsyncMock(return_value=True)
+
+        old_provider = bot_module.config.transcription_provider
+        config_module.config.transcription_provider = "volcengine"
+        bot_module.config.transcription_provider = "volcengine"
+
+        async def run_now(user_id, run_task, on_overflow):
+            del user_id, on_overflow
+            await run_task()
+            return True
+
+        bot._enqueue_user_task = run_now
+        bot._download_voice_file = AsyncMock(return_value=None)
+        bot._prepare_audio_for_whisper = AsyncMock(
+            side_effect=lambda path, cleanup: path
+        )
+        bot._build_telegram_file_url = AsyncMock(
+            return_value="https://api.telegram.org/file/bot123/voice.ogg"
+        )
+        bot._process_user_message_text = AsyncMock()
+        transcriber = SimpleNamespace(
+            transcribe_audio=AsyncMock(return_value="hello from volcengine")
+        )
+        bot._get_volcengine_transcriber = lambda: transcriber
+        voice = SimpleNamespace(file_id="v1", duration=30, mime_type="audio/ogg")
+        update = _build_update(11, voice)
+
+        try:
+            with TemporaryDirectory() as td:
+                bot._audio_dir = Path(td)
+                await bot._handle_voice_message(update, None)
+        finally:
+            config_module.config.transcription_provider = old_provider
+            bot_module.config.transcription_provider = old_provider
+
+        bot._build_telegram_file_url.assert_awaited_once_with("v1")
+        transcriber.transcribe_audio.assert_awaited_once_with(
+            "https://api.telegram.org/file/bot123/voice.ogg",
+            duration_seconds=30,
+        )
+        bot._download_voice_file.assert_not_called()
+        bot._prepare_audio_for_whisper.assert_not_called()
+        self.assertTrue(
+            any(msg.startswith("🎤 Voice: ") for msg in update.message.replies)
+        )
+
+    async def test_reports_missing_volcengine_configuration(self):
+        bot = TelegramBot()
+        bot._check_access = AsyncMock(return_value=True)
+
+        old_provider = bot_module.config.transcription_provider
+        config_module.config.transcription_provider = "volcengine"
+        bot_module.config.transcription_provider = "volcengine"
+
+        async def run_now(user_id, run_task, on_overflow):
+            del user_id, on_overflow
+            await run_task()
+            return True
+
+        bot._enqueue_user_task = run_now
+        bot._build_telegram_file_url = AsyncMock(
+            return_value="https://api.telegram.org/file/bot123/voice.ogg"
+        )
+
+        def raise_missing_config():
+            raise ValueError("missing Volcengine credentials")
+
+        bot._get_volcengine_transcriber = raise_missing_config
+        voice = SimpleNamespace(file_id="v1", duration=30, mime_type="audio/ogg")
+        update = _build_update(11, voice)
+
+        try:
+            with TemporaryDirectory() as td:
+                bot._audio_dir = Path(td)
+                await bot._handle_voice_message(update, None)
+        finally:
+            config_module.config.transcription_provider = old_provider
+            bot_module.config.transcription_provider = old_provider
+
+        self.assertTrue(
+            any(
+                "Voice transcription is not configured" in msg
+                for msg in update.message.replies
+            )
+        )
+        bot._build_telegram_file_url.assert_not_called()
 
     async def test_stop_cancels_active_voice_tasks(self):
         bot = TelegramBot()
