@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-10
+
+### Added
+- `/cd` command to change per-user working directory
+- `/ls` command to list directory contents
+
+### Fixed
+- Improve Windows and directory-name compatibility
+- Auto-detect Git Bash path on Windows via cygpath
+- Improve Windows compatibility for SDK subprocess launching
+- Improve error resilience and deliver late results for timed-out tasks
+
 ## [0.8.2] - 2026-03-10
 
 ### Fixed
