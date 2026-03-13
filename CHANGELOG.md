@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026-03-13
+
+### Fixed
+- Replace blocking `run_polling()` with low-level async API (`Application.initialize/start/updater.start_polling`) to resolve polling hang where `run_polling()` blocks indefinitely and cannot be interrupted
+- Add `getMe()`-based watchdog that probes Telegram API reachability every 60 seconds; after 5 minutes of consecutive failures, stops the updater and restarts polling in-process
+- Detect unexpected polling termination and automatically restart without process restart
+- Graceful shutdown between restart cycles ensures clean Application teardown
+
 ## [0.8.4] - 2026-03-12
 
 ### Fixed
