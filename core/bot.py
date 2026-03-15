@@ -34,7 +34,8 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from telegram.request import BaseRequest, HTTPXRequest
+from telegram.request import BaseRequest, HTTPXRequest, RequestData
+from telegram.request._baserequest import ODVInput
 from telegram_bot.utils.config import config
 from telegram_bot.session.manager import session_manager
 from telegram_bot.core.project_chat import (
@@ -60,6 +61,61 @@ STALE_MESSAGE_SECONDS = 20 * 60  # 20 minutes
 
 class _PollingRestart(Exception):
     """Signal to restart polling loop."""
+
+
+class _ActivityTrackingRequest(BaseRequest):
+    """Wrap a PTB request object and record activity for every getUpdates attempt."""
+
+    def __init__(
+        self,
+        wrapped: BaseRequest,
+        on_activity: Callable[[], None],
+        *,
+        label: str,
+    ) -> None:
+        self._wrapped = wrapped
+        self._on_activity = on_activity
+        self._label = label
+
+    @property
+    def read_timeout(self) -> float | None:
+        return self._wrapped.read_timeout
+
+    async def initialize(self) -> None:
+        await self._wrapped.initialize()
+
+    async def shutdown(self) -> None:
+        await self._wrapped.shutdown()
+
+    def _emit_activity(self) -> None:
+        try:
+            self._on_activity()
+        except Exception:
+            logger.exception("Failed to record %s activity", self._label)
+
+    async def do_request(
+        self,
+        url: str,
+        method: str,
+        request_data: RequestData | None = None,
+        read_timeout: ODVInput[float] = BaseRequest.DEFAULT_NONE,
+        write_timeout: ODVInput[float] = BaseRequest.DEFAULT_NONE,
+        connect_timeout: ODVInput[float] = BaseRequest.DEFAULT_NONE,
+        pool_timeout: ODVInput[float] = BaseRequest.DEFAULT_NONE,
+    ) -> tuple[int, bytes]:
+        self._emit_activity()
+        try:
+            return await self._wrapped.do_request(
+                url=url,
+                method=method,
+                request_data=request_data,
+                read_timeout=read_timeout,
+                write_timeout=write_timeout,
+                connect_timeout=connect_timeout,
+                pool_timeout=pool_timeout,
+            )
+        finally:
+            self._emit_activity()
 
 
 def _esc_md2(text: str) -> str:
