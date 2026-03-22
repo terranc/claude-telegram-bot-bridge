@@ -44,3 +44,4 @@ openspec
 .ace-tool/
 /.codex
 /.commitlintrc.js
+/AGENTS.md
