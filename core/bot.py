@@ -155,7 +155,7 @@ class TelegramBot:
             or os.environ.get("http_proxy")
         )
         return HTTPXRequest(
-            connection_pool_size=2,
+            connection_pool_size=4,  # Increased from 2 to handle long polling
             pool_timeout=5.0,
             read_timeout=35.0,
             write_timeout=10.0,
@@ -258,6 +258,20 @@ class TelegramBot:
                 )
                 health_reporter.record_telegram_error(message, consecutive_failures=1)
                 raise SystemExit(message)
+            except telegram.error.TimedOut as e:
+                # PoolTimeout is converted to TimedOut, need force cleanup
+                health_reporter.record_telegram_error(
+                    f"telegram timeout error: {e}",
+                    consecutive_failures=1,
+                )
+                logger.warning(
+                    "TimedOut error during initialization (likely PoolTimeout): %s, retrying...",
+                    e,
+                )
+                # Force cleanup to release leaked connections from pool
+                await self._graceful_shutdown(force=True)
+                await asyncio.sleep(5)
+                continue
             except telegram.error.NetworkError as e:
                 health_reporter.record_telegram_error(
                     f"telegram startup error: {e}",
@@ -266,6 +280,8 @@ class TelegramBot:
                 logger.warning(
                     "Network error during initialization: %s, retrying...", e
                 )
+                # Force cleanup to release leaked connections from pool
+                await self._graceful_shutdown(force=True)
                 await asyncio.sleep(5)
                 continue
 
@@ -314,12 +330,26 @@ class TelegramBot:
 
                 logger.warning("Polling restart triggered, restarting...")
                 continue
+            except telegram.error.TimedOut as e:
+                # PoolTimeout is converted to TimedOut, need force cleanup
+                health_reporter.record_telegram_error(
+                    f"telegram timeout error: {e}",
+                    consecutive_failures=1,
+                )
+                logger.warning(
+                    "TimedOut error during runtime (likely PoolTimeout): %s", e
+                )
+                # Force cleanup to release leaked connections from pool
+                await self._graceful_shutdown(force=True)
+                continue
             except telegram.error.NetworkError as e:
                 health_reporter.record_telegram_error(
                     f"telegram runtime error: {e}",
                     consecutive_failures=1,
                 )
                 logger.warning("Network error during startup: %s", e)
+                # Force cleanup to release leaked connections from pool
+                await self._graceful_shutdown(force=True)
                 continue
             except telegram.error.Forbidden as e:
                 message = (
@@ -391,19 +421,40 @@ class TelegramBot:
                 raise _PollingRestart()
             await asyncio.sleep(1)
 
-    async def _graceful_shutdown(self):
-        """Tear down the current Application so the next loop iteration is clean."""
+    async def _graceful_shutdown(self, force: bool = False):
+        """Tear down the current Application so the next loop iteration is clean.
+
+        Args:
+            force: If True, skip graceful stop and immediately cleanup.
+                   Use when connection pool is exhausted or timed out.
+        """
         if not self.application:
             return
+
         try:
-            if self.application.updater and self.application.updater.running:
-                await self.application.updater.stop()
-            if self.application.running:
-                await self.application.stop()
-            await self.application.shutdown()
+            if force:
+                logger.warning("Force shutdown requested, skipping graceful stop")
+            else:
+                # Give graceful shutdown 5 seconds max
+                await asyncio.wait_for(
+                    self._do_graceful_stop(),
+                    timeout=5.0,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("Graceful shutdown timed out after 5s, forcing cleanup")
         except Exception:
             logger.exception("Error during graceful shutdown")
-        self.application = None
+        finally:
+            # Always clear the reference so next build() creates fresh connections
+            self.application = None
+
+    async def _do_graceful_stop(self):
+        """Actual graceful shutdown logic with proper resource cleanup."""
+        if self.application.updater and self.application.updater.running:
+            await self.application.updater.stop()
+        if self.application.running:
+            await self.application.stop()
+        await self.application.shutdown()
 
     def _check_user_access(self, user_id: int) -> bool:
         """Check if user has permission to use the bot"""

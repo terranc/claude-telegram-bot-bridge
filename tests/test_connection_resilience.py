@@ -88,7 +88,7 @@ class TestConnectionResilience(unittest.TestCase):
         polling_request = mock_builder.get_updates_request.call_args.args[0]
         default_request = mock_builder.request.call_args.args[0]
 
-        self.assertEqual(polling_request["connection_pool_size"], 2)
+        self.assertEqual(polling_request["connection_pool_size"], 4)
         self.assertEqual(polling_request["read_timeout"], 35.0)
         self.assertEqual(polling_request["pool_timeout"], 5.0)
         self.assertEqual(polling_request["http_version"], "1.1")
