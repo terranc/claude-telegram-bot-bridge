@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-04-01
+
+### Fixed
+- Faster recovery from connection pool exhaustion by reducing watchdog interval (60s→30s), lowering network failure threshold (300s→90s), and adding fast restart for connection errors (2 consecutive failures)
+
 ## [0.9.3] - 2026-03-29
 
 ### Added
