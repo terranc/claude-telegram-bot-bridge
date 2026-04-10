@@ -103,9 +103,8 @@ class TelegramBot:
     _PATH_KEYWORDS = ("path", "file", "cwd", "dir", "directory", "root")
     _MAX_INFLIGHT_MESSAGES = 3
     _STALE_AUDIO_SECONDS = 24 * 60 * 60
-    _WATCHDOG_INTERVAL = 30  # Check more frequently for faster recovery
-    _NETWORK_FAILURE_THRESHOLD = 90  # 3 failures → force exit (was 300s/5min)
-    _FAST_FAILURE_THRESHOLD = 2  # Immediate restart on consecutive connection errors
+    _WATCHDOG_INTERVAL = 60
+    _NETWORK_FAILURE_THRESHOLD = 300  # 5 min of consecutive failures → force exit
 
     async def _on_ready(self, application: Application):
         """Called after application.initialize() — sets up commands and cleanup."""
@@ -398,31 +397,10 @@ class TelegramBot:
                 )
                 logger.warning("Telegram API unreachable (%ds): %s", total_down, e)
 
-                # Fast restart for connection errors (likely pool exhaustion or proxy issues)
-                is_connection_error = any(
-                    err in str(e).lower()
-                    for err in [
-                        "connecterror",
-                        "pool timeout",
-                        "connection pool",
-                        "timed out",
-                    ]
-                )
-
-                should_restart = total_down >= self._NETWORK_FAILURE_THRESHOLD or (
-                    is_connection_error
-                    and consecutive_failures >= self._FAST_FAILURE_THRESHOLD
-                )
-
-                if should_restart:
-                    reason = (
-                        f"connection error ({consecutive_failures} consecutive)"
-                        if is_connection_error
-                        else f"network down for {total_down}s"
-                    )
+                if total_down >= self._NETWORK_FAILURE_THRESHOLD:
                     logger.warning(
-                        "Restarting polling due to %s...",
-                        reason,
+                        "Network down for %ds, restarting polling...",
+                        total_down,
                     )
                     try:
                         await asyncio.wait_for(updater.stop(), timeout=15)

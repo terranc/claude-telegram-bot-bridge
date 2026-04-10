@@ -496,17 +496,43 @@ _is_valid_token() {
 }
 
 # Read a config value from project .env, falling back to bot source dir .env
+# NOTE: For comprehensive env merging at startup, merge_env_files() is preferred
 read_env_with_fallback() {
     local key="$1"
     local value
     value="$(read_env_value "$key")"
-    if [ "$key" = "TELEGRAM_BOT_TOKEN" ] && ! _is_valid_token "$value"; then
-        value=""
-    fi
     if [ -z "$value" ]; then
         value="$(read_env_value "$key" "$SCRIPT_DIR/.env")"
     fi
     echo "$value"
+}
+
+# Merge project .env with global fallback .env
+# Project .env values take precedence over global .env
+merge_env_files() {
+    local project_env="$ENV_FILE"
+    local global_env="$SCRIPT_DIR/.env"
+
+    if [ ! -f "$global_env" ]; then
+        return
+    fi
+
+    # Read all keys from global .env
+    local keys key value project_value
+    keys=$(grep -E "^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=" "$global_env" 2>/dev/null | \
+           sed -E 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*).*/\2/' | sort -u)
+
+    for key in $keys; do
+        # Check if key exists in project .env
+        project_value="$(read_env_value "$key" "$project_env")"
+        if [ -z "$project_value" ]; then
+            # Not in project .env, get from global and export
+            value="$(read_env_value "$key" "$global_env")"
+            if [ -n "$value" ]; then
+                export "$key=$value"
+            fi
+        fi
+    done
 }
 
 # ── Ensure project config exists and validate required settings ──
@@ -579,6 +605,38 @@ do_install() {
     fi
     echo "📝 Generating launchd plist: $PLIST_FILE"
     mkdir -p "$(dirname "$PLIST_FILE")"
+    # Ensure .local/bin is in PATH for claude CLI
+    LAUNCHD_PATH="${PATH}"
+    if [ -d "$HOME/.local/bin" ] && ! echo "$LAUNCHD_PATH" | grep -q "$HOME/.local/bin"; then
+        LAUNCHD_PATH="$HOME/.local/bin:$LAUNCHD_PATH"
+    fi
+
+    # Read proxy config for launchd environment
+    local proxy_url
+    proxy_url="$(read_env_with_fallback "PROXY_URL")"
+
+    # Build environment variables section
+    local env_vars
+    env_vars="    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${LAUNCHD_PATH}</string>
+        <key>HOME</key>
+        <string>${HOME}</string>"
+    if [ -n "$proxy_url" ]; then
+        env_vars="$env_vars
+        <key>http_proxy</key>
+        <string>${proxy_url}</string>
+        <key>https_proxy</key>
+        <string>${proxy_url}</string>
+        <key>all_proxy</key>
+        <string>${proxy_url}</string>
+        <key>no_proxy</key>
+        <string>localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12</string>"
+    fi
+    env_vars="$env_vars
+    </dict>"
+
     cat > "$PLIST_FILE" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -595,13 +653,7 @@ do_install() {
         <string>${PROJECT_ROOT}</string>
         <string>--_launchd_child</string>
     </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>${PATH}</string>
-        <key>HOME</key>
-        <string>${HOME}</string>
-    </dict>
+${env_vars}
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -625,6 +677,18 @@ PLIST
         echo "⚠️  launchctl bootstrap failed, trying legacy API..."
         launchctl load -w "$PLIST_FILE"
     fi
+    # Wait for process to start (up to 5 seconds)
+    echo "⏳ Waiting for bot to initialize..."
+    for i in $(seq 1 10); do
+        sleep 0.5
+        if [ -f "$PID_FILE" ]; then
+            pid="$(cat "$PID_FILE")"
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "✅ Bot process started (PID: $pid)"
+                break
+            fi
+        fi
+    done
     echo "💡 Use $0 --path \"$PROJECT_ROOT\" --status to check status"
     echo "💡 Use $0 --path \"$PROJECT_ROOT\" --uninstall to remove startup service"
     exit 0
@@ -633,10 +697,26 @@ PLIST
 do_uninstall() {
     if [ -f "$PLIST_FILE" ]; then
         echo "🗑️  Uninstalling launchd plist..."
-        launchctl bootout "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null || launchctl unload "$PLIST_FILE" 2>/dev/null
-        rm -f "$PLIST_FILE"
+        # Stop the service first
+        launchctl bootout "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null || launchctl unload "$PLIST_FILE" 2>/dev/null || true
+        sleep 1
+        # Stop any remaining processes
+        local pid supervisor_pid
+        supervisor_pid="$(read_supervisor_pid)"
+        pid="$(read_pid)"
+        if [ -n "$supervisor_pid" ] && kill -0 "$supervisor_pid" 2>/dev/null; then
+            echo "🛑 Stopping daemon supervisor (PID: $supervisor_pid)..."
+            kill "$supervisor_pid" 2>/dev/null || true
+        fi
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "🛑 Stopping bot process (PID: $pid)..."
+            kill "$pid" 2>/dev/null || true
+        fi
         cleanup_pid
         cleanup_supervisor_pid
+        cleanup_token_lock_if_safe "$supervisor_pid" "$pid"
+        # Remove the plist file
+        rm -f "$PLIST_FILE"
         echo "✅ Startup service uninstalled"
     else
         echo "⚪ Startup service not installed (plist not found)"
@@ -860,6 +940,12 @@ run_daemon_supervisor() {
     echo $$ > "$SUPERVISOR_PID_FILE"
     write_token_lock "$$"
 
+    # Debug: log environment variables for daemon supervisor
+    echo "DEBUG: http_proxy=$http_proxy" >> "$LOGS_DIR/supervisor.log"
+    echo "DEBUG: https_proxy=$https_proxy" >> "$LOGS_DIR/supervisor.log"
+    echo "DEBUG: VENV_DIR=$VENV_DIR" >> "$LOGS_DIR/supervisor.log"
+    echo "DEBUG: PROJECT_ROOT=$PROJECT_ROOT" >> "$LOGS_DIR/supervisor.log"
+
     while true; do
         echo ""
         echo "🚀 Starting Telegram Bot..."
@@ -868,9 +954,11 @@ run_daemon_supervisor() {
         start_time=$(date +%s)
         if [ -n "$BOT_DEBUG" ]; then
             BOT_PROCESS_MODE=daemon BOT_TOKEN_LOCK_FILE="$TOKEN_LOCK_FILE" BOT_OWNS_TOKEN_LOCK=0 \
+                http_proxy="$http_proxy" https_proxy="$https_proxy" all_proxy="$all_proxy" no_proxy="$no_proxy" \
                 "$VENV_DIR/bin/python" -m telegram_bot --path "$PROJECT_ROOT" --debug &
         else
             BOT_PROCESS_MODE=daemon BOT_TOKEN_LOCK_FILE="$TOKEN_LOCK_FILE" BOT_OWNS_TOKEN_LOCK=0 \
+                http_proxy="$http_proxy" https_proxy="$https_proxy" all_proxy="$all_proxy" no_proxy="$no_proxy" \
                 "$VENV_DIR/bin/python" -m telegram_bot --path "$PROJECT_ROOT" &
         fi
         child_pid=$!
@@ -912,6 +1000,9 @@ run_daemon_supervisor() {
         sleep "$restart_delay"
     done
 }
+
+# Merge env files before check_env so all config is available
+merge_env_files
 
 check_env
 init_token_lock

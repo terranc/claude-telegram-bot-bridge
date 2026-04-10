@@ -126,8 +126,13 @@ class RuntimeHealthReporter:
 
     def mark_unavailable(self, reason: str) -> None:
         with self._lock:
-            self._state["service"]["state"] = "unavailable"
-            self._state["service"]["reason"] = _normalize_reason(reason)
+            # In launchd mode, process exit means restart window, not final unavailable
+            if self._process_mode == "launchd":
+                self._state["service"]["state"] = "starting"
+                self._state["service"]["reason"] = f"waiting for launchd restart ({_normalize_reason(reason)})"
+            else:
+                self._state["service"]["state"] = "unavailable"
+                self._state["service"]["reason"] = _normalize_reason(reason)
             self._write_health_locked()
 
     def record_telegram_ok(self) -> None:

@@ -5,12 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.4] - 2026-04-01
+## [0.9.5] - 2026-04-10
+
+### Added
+- Pass proxy environment variables (`http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`) to launchd plist so bot can connect through proxy in startup service mode
+- Wait for bot process to start (up to 5 seconds) after `--install` to ensure `--status` returns valid state immediately
 
 ### Fixed
-- Faster recovery from connection pool exhaustion by reducing watchdog interval (60s→30s), lowering network failure threshold (300s→90s), and adding fast restart for connection errors (2 consecutive failures)
+- In launchd mode, mark service state as `starting` instead of `unavailable` during restart windows so status reflects that launchd will respawn the process
+- Stop bot process before uninstalling launchd plist to ensure clean removal
 
-## [0.9.3] - 2026-03-29
+### Changed
+- Document macOS Full Disk Access requirement for `~/Documents`, `~/Desktop`, and `~/Downloads` project directories in README
 
 ### Added
 - Add optional Telegram streaming tool call display, controlled by `ENABLE_STREAMING_TOOL_CALLS` and disabled by default

@@ -336,6 +336,19 @@ The daemon auto-restarts on crash, logs each crash with exit code and uptime, an
 
 When `PROXY_URL` is set, both regular Bot API calls and long-polling requests use proxy-aware HTTP/1.1 clients. This helps the bot recover more reliably after laptop sleep, network handoffs, or proxy reconnects.
 
+### macOS Full Disk Access
+
+If your project directory is located in `~/Documents`, `~/Desktop`, or `~/Downloads`, macOS privacy protection will block launchd from reading files in those directories. This causes `--install` to fail with exit code 78 (EX_CONFIG).
+
+**Solution**: Add `/bin/bash` to Full Disk Access:
+
+1. Open **System Settings** → **Privacy & Security** → **Full Disk Access**
+2. Click the **+** button
+3. Press `Cmd + Shift + G` and type `/bin/bash`
+4. Select `bash` and confirm
+
+After this, `--install` will work correctly in protected directories.
+
 ## Debugging
 
 ```bash
