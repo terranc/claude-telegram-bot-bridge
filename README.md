@@ -247,8 +247,10 @@ Any unrecognized `/command` is also forwarded as a skill invocation.
 | `CLAUDE_CLI_PATH` | No | *(auto-detect)* | Absolute path to Claude CLI binary |
 | `CLAUDE_SETTINGS_PATH` | No | `~/.claude/settings.json` | Path to Claude Code settings file |
 | `CLAUDE_PROCESS_TIMEOUT` | No | `600` | SDK timeout in seconds |
+| `AUTO_NEW_SESSION_AFTER_HOURS` | No | `24` | Auto-start new session after N hours of inactivity; set to `0`/`false`/`off` to disable |
 | `DRAFT_UPDATE_MIN_CHARS` | No | `150` | Minimum characters before streaming draft update |
 | `DRAFT_UPDATE_INTERVAL` | No | `1.0` | Minimum seconds between streaming draft updates |
+| `ENABLE_STREAMING_TOOL_CALLS` | No | `false` | Show Claude tool calls in Telegram streaming messages |
 | `TRANSCRIPTION_PROVIDER` | No | `whisper` | Voice transcription provider: `whisper` or `volcengine` |
 | `OPENAI_API_KEY` | Voice only | — | OpenAI API key for Whisper transcription |
 | `OPENAI_BASE_URL` | No | *(official OpenAI API)* | OpenAI-compatible Whisper endpoint base URL |

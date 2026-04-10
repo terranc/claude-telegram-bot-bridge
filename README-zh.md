@@ -244,8 +244,10 @@ Claude:  ...
 | `CLAUDE_CLI_PATH` | 否 | *（自动检测）* | Claude CLI 绝对路径 |
 | `CLAUDE_SETTINGS_PATH` | 否 | `~/.claude/settings.json` | Claude Code settings 文件路径 |
 | `CLAUDE_PROCESS_TIMEOUT` | 否 | `600` | SDK 超时时间（秒） |
+| `AUTO_NEW_SESSION_AFTER_HOURS` | 否 | `24` | 空闲 N 小时后自动启动新会话；设为 `0`/`false`/`off` 禁用 |
 | `DRAFT_UPDATE_MIN_CHARS` | 否 | `150` | 流式响应草稿更新的最小字符数 |
 | `DRAFT_UPDATE_INTERVAL` | 否 | `1.0` | 流式响应草稿更新的最小间隔（秒） |
+| `ENABLE_STREAMING_TOOL_CALLS` | 否 | `false` | 在 Telegram 流式消息中显示 Claude 工具调用 |
 | `TRANSCRIPTION_PROVIDER` | 否 | `whisper` | 语音转写渠道：`whisper` 或 `volcengine` |
 | `OPENAI_API_KEY` | 语音功能必需 | — | Whisper 转写所需 OpenAI API Key |
 | `OPENAI_BASE_URL` | 否 | *（官方 OpenAI API）* | OpenAI 兼容 Whisper 接口基础地址 |
@@ -333,6 +335,19 @@ ffmpeg -version
 守护进程崩溃后自动重启，每次崩溃记录退出码和运行时间，60 秒内连续崩溃 5 次后停止重启。
 
 如果设置了 `PROXY_URL`，普通 Bot API 调用和长轮询都会使用支持代理的 HTTP/1.1 客户端。这让 Bot 在电脑休眠恢复、网络切换或代理重连后更容易自动恢复。
+
+### macOS 完全磁盘访问权限
+
+如果你的项目目录位于 `~/Documents`、`~/Desktop` 或 `~/Downloads`，macOS 隐私保护会阻止 launchd 读取这些目录中的文件。这会导致 `--install` 失败并返回退出码 78 (EX_CONFIG)。
+
+**解决方法**：将 `/bin/bash` 添加到完全磁盘访问权限：
+
+1. 打开 **系统设置** → **隐私与安全性** → **完全磁盘访问权限**
+2. 点击 **+** 按钮
+3. 按 `Cmd + Shift + G` 并输入 `/bin/bash`
+4. 选择 `bash` 并确认
+
+完成后再执行 `--install` 即可在受保护目录中正常工作。
 
 ## 调试
 
