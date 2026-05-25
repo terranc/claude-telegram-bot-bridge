@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Callable, Awaitable, Deque
 from dataclasses import dataclass, field
 
-from claude_code_sdk import (
+from claude_agent_sdk import (
     ClaudeSDKClient,
-    ClaudeCodeOptions,
+    ClaudeAgentOptions,
     AssistantMessage,
     ResultMessage,
     TextBlock,
@@ -23,7 +23,7 @@ from claude_code_sdk import (
     PermissionResultDeny,
 )
 
-from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
 from telegram_bot.utils.chat_logger import log_chat
 from telegram_bot.utils.config import config
@@ -287,7 +287,7 @@ class ProjectChatHandler:
             "cwd": str(self.project_root),
             "allowed_tools": ALLOWED_TOOLS,
             "disallowed_tools": ["AskUserQuestion"],  # Disable to force degradation
-            "append_system_prompt": (
+            "system_prompt": (
                 "\n\n## Important: User Questions and Choices\n\n"
                 "The AskUserQuestion tool is NOT available in this environment. "
                 "When you need to ask the user a question with multiple choice options:\n\n"
@@ -301,15 +301,34 @@ class ProjectChatHandler:
                 "1. Option A - Description\n"
                 "2. Option B - Description\n"
                 "3. Option C - Description\n\n"
-                "After outputting options, you MUST stop and wait for user input."
+                "After outputting options, you MUST stop and wait for user input.\n\n"
+                "## Important: Sending Images and Files\n\n"
+                "When the user asks you to send/show/deliver an image or file:\n\n"
+                "1. Do NOT use the Read tool to read or analyze the image/file content\n"
+                "2. Simply output the file path in your response (absolute path preferred)\n"
+                "3. The system will automatically detect file paths and send them as messages\n"
+                "4. Supported image formats: .png, .jpg, .jpeg, .gif, .webp\n"
+                "5. Other files will be sent as documents\n\n"
+                "Example: When user says 'send me the generated image', just respond with:\n"
+                "'Here is the image: /path/to/image.png' - the system will send it automatically.\n\n"
+                "After generating an image (e.g., via a skill), ALWAYS include the output file path "
+                "in your response so the system can send it to the user."
             ),
             "can_use_tool": can_use_tool,
             "permission_mode": "default",
         }
         if model:
-            opts["model"] = model
+            # Normalize model name: ensure at most one [1M] suffix
+            # e.g., "claude-opus-4-7[1M][1m]" -> "claude-opus-4-7[1M]"
+            # e.g., "opus" -> "opus" (alias, unchanged)
+            normalized = re.sub(r'\[(?:1[mM])\]+', '', model)  # Remove all [1M]/[1m] suffixes
+            if normalized != model:
+                # Had suffix, add back single [1M]
+                normalized = f"{normalized}[1m]"
+                logger.info(f"Model normalized: {model!r} -> {normalized!r}")
+            opts["model"] = normalized
 
-        client = ClaudeSDKClient(options=ClaudeCodeOptions(**opts))
+        client = ClaudeSDKClient(options=ClaudeAgentOptions(**opts))
         await client.connect()
         state = _UserStreamState(client=client, model=model)
         state_holder["state"] = state

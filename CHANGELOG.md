@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-05-25
+
+### Changed
+- Migrate from `claude-code-sdk` to `claude-agent-sdk` (v0.1.72+) for improved Claude API integration
+- Add OpenTelemetry dependencies for enhanced observability support
+
+### Added
+- System prompt instructions for automatic image/file path detection and delivery
+- Application screenshots to README showcasing streaming response, voice message, and code editing features
+
+### Fixed
+- Auto-split `/skills` command responses exceeding Telegram's 4096 character limit using `_reply_smart`
+- Normalize model name `[1M]` suffix to prevent duplicate suffixes (e.g., `[1M][1m]`)
+- Add debug logging for file artifact sending to improve troubleshooting
+
+### Removed
+- Redundant proxy environment variable passthrough in daemon supervisor (environment inherits from parent)
+
 ## [0.9.5] - 2026-04-10
 
 ### Added

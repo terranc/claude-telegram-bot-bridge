@@ -954,11 +954,9 @@ run_daemon_supervisor() {
         start_time=$(date +%s)
         if [ -n "$BOT_DEBUG" ]; then
             BOT_PROCESS_MODE=daemon BOT_TOKEN_LOCK_FILE="$TOKEN_LOCK_FILE" BOT_OWNS_TOKEN_LOCK=0 \
-                http_proxy="$http_proxy" https_proxy="$https_proxy" all_proxy="$all_proxy" no_proxy="$no_proxy" \
                 "$VENV_DIR/bin/python" -m telegram_bot --path "$PROJECT_ROOT" --debug &
         else
             BOT_PROCESS_MODE=daemon BOT_TOKEN_LOCK_FILE="$TOKEN_LOCK_FILE" BOT_OWNS_TOKEN_LOCK=0 \
-                http_proxy="$http_proxy" https_proxy="$https_proxy" all_proxy="$all_proxy" no_proxy="$no_proxy" \
                 "$VENV_DIR/bin/python" -m telegram_bot --path "$PROJECT_ROOT" &
         fi
         child_pid=$!

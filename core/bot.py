@@ -43,7 +43,7 @@ from telegram_bot.core.project_chat import (
     ChatResponse,
     CONVERSATIONS_DIR,
 )
-from claude_code_sdk.types import PermissionResultAllow, PermissionResultDeny
+from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny
 from telegram_bot.utils.chat_logger import log_debug
 from telegram_bot.utils.audio_processor import AudioProcessor
 from telegram_bot.utils.transcription import (
@@ -91,7 +91,7 @@ class TelegramBot:
         self._volcengine_tos_uploader: Optional[VolcengineTOSUploader] = None
         self._tts_synthesizer: Optional[MacOSTtsSynthesizer] = None
 
-    # Available models for /model command
+    # Available models for /model command (aliases, CLI resolves via env vars)
     MODELS = [
         ("sonnet", "Claude Sonnet"),
         ("opus", "Claude Opus"),
@@ -832,7 +832,10 @@ class TelegramBot:
             typing_callback=lambda: message.chat.send_action(action="typing"),
         )
         await self._save_session_id(user_id, response)
-        await message.reply_text(response.content, parse_mode="HTML")
+        # PATCH 2026-05-04: use _reply_smart to auto-split >4096 char responses
+        # (Telegram message size limit). Capo's 23TM project has 31+ skills,
+        # full /skills listing exceeds limit → "Message is too long" error.
+        await self._reply_smart(message, response.content, parse_mode="HTML")
         log_debug(user_id, "bot", response.content)
 
     async def _cmd_new(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1797,7 +1800,12 @@ class TelegramBot:
         self, message: Message, content: str, force_options: bool
     ) -> None:
         resolved_paths = self._resolve_paths(content)
-        in_root_paths, _ = self._split_paths_by_scope(resolved_paths)
+        in_root_paths, outside_paths = self._split_paths_by_scope(resolved_paths)
+        logger.debug(
+            f"_send_content_artifacts: resolved={len(resolved_paths)} paths, "
+            f"in_root={len(in_root_paths)}, outside={len(outside_paths)}, "
+            f"paths={[str(p) for p in resolved_paths]}"
+        )
         await self._send_file_paths(message.chat.id, in_root_paths)
 
         if force_options:
@@ -2634,14 +2642,18 @@ class TelegramBot:
     async def _send_file_paths(self, chat_id: int, paths: List[FilePath]) -> None:
         app = self._require_application()
         bot = app.bot
+        logger.debug(f"_send_file_paths: sending {len(paths)} files to chat {chat_id}")
         for p in paths:
             try:
+                logger.debug(f"Sending file: {p} (suffix: {p.suffix.lower()})")
                 if p.suffix.lower() in self._IMAGE_EXTS:
                     with open(p, "rb") as f:
                         await bot.send_photo(chat_id, photo=f)
+                    logger.info(f"Sent photo: {p}")
                 else:
                     with open(p, "rb") as f:
                         await bot.send_document(chat_id, document=f)
+                    logger.info(f"Sent document: {p}")
             except Exception as e:
                 logger.warning(f"Failed to send file {p}: {e}")
 

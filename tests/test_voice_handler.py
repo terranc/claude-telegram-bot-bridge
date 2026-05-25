@@ -123,7 +123,7 @@ chat_logger_module.log_debug = lambda *args, **kwargs: None
 sys.modules["telegram_bot.utils.chat_logger"] = chat_logger_module
 
 
-permission_module = types.ModuleType("claude_code_sdk.types")
+permission_module = types.ModuleType("claude_agent_sdk.types")
 
 
 class _PermissionResultAllow:
@@ -137,7 +137,7 @@ class _PermissionResultDeny:
 
 permission_module.PermissionResultAllow = _PermissionResultAllow
 permission_module.PermissionResultDeny = _PermissionResultDeny
-sys.modules["claude_code_sdk.types"] = permission_module
+sys.modules["claude_agent_sdk.types"] = permission_module
 
 
 from telegram_bot.core.bot import TelegramBot

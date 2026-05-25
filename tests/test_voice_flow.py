@@ -124,12 +124,12 @@ chat_logger_module.log_debug = lambda *args, **kwargs: None
 sys.modules["telegram_bot.utils.chat_logger"] = chat_logger_module
 
 
-permission_module = types.ModuleType("claude_code_sdk.types")
+permission_module = types.ModuleType("claude_agent_sdk.types")
 permission_module.PermissionResultAllow = type("PermissionResultAllow", (), {})
 permission_module.PermissionResultDeny = type(
     "PermissionResultDeny", (), {"__init__": lambda self, message="": None}
 )
-sys.modules["claude_code_sdk.types"] = permission_module
+sys.modules["claude_agent_sdk.types"] = permission_module
 
 
 import telegram_bot.core.bot as bot_module

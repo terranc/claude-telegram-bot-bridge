@@ -14,6 +14,12 @@ Claude Code 很强大，但它绑定在你的终端里。当你离开电脑 — 
 
 ## 功能特性
 
+### 截图预览
+
+| | | |
+|:---:|:---:|:---:|
+| ![流式响应](docs/screenshots/b922c1374d20c13f941d64955789d379.jpg) | ![语音消息](docs/screenshots/1cd0c60ba52f0ef2081a8ebc69a486c5.jpg) | ![代码修改](docs/screenshots/code-editing.jpg) |
+
 **核心能力**
 - 在 Telegram 中直接与 Claude 对话，由 Claude Code SDK 驱动
 - 远程调用任何 Claude Code 技能 (`/skill <name>`) 或斜杠命令 (`/command <cmd>`)

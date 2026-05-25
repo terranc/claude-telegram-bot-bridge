@@ -14,6 +14,12 @@ This bot takes a different approach — **lightweight, zero-infrastructure, secu
 
 ## Features
 
+### Screenshots
+
+| | | |
+|:---:|:---:|:---:|
+| ![Streaming](docs/screenshots/b922c1374d20c13f941d64955789d379.jpg) | ![Voice](docs/screenshots/1cd0c60ba52f0ef2081a8ebc69a486c5.jpg) | ![Code](docs/screenshots/code-editing.jpg) |
+
 **Core**
 - Chat with Claude directly in Telegram, powered by Claude Code SDK
 - Invoke any Claude Code skill (`/skill <name>`) or slash command (`/command <cmd>`) remotely
